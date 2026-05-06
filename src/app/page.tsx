@@ -1,65 +1,72 @@
-import Image from "next/image";
+// src/app/page.tsx
+import Link from 'next/link';
+import { ArrowRight, CheckCircle, Users, BarChart3, ShieldCheck } from 'lucide-react';
 
-export default function Home() {
+export default function LandingPage() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="flex flex-col">
+      {/* HERO SECTION */}
+      <section className="bg-gradient-to-b from-blue-50 to-white py-20 px-4">
+        <div className="max-w-7xl mx-auto text-center">
+          <h1 className="text-5xl md:text-6xl font-extrabold text-slate-900 mb-6">
+            Consultoría Socioeconómica <br />
+            <span className="text-blue-700">Inteligente y Eficiente</span>
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-xl text-slate-600 max-w-2xl mx-auto mb-10">
+            Gestiona entrevistas, analiza datos socioeconómicos y mantén un control total
+            de tus clientes en una sola plataforma robusta y segura.
           </p>
+          <div className="flex justify-center gap-4">
+            <Link
+              href="/auth/login"
+              className="bg-blue-700 text-white px-8 py-4 rounded-full font-bold text-lg hover:bg-blue-800 transition-all flex items-center gap-2 shadow-lg shadow-blue-200"
+            >
+              Acceder al Sistema <ArrowRight size={20} />
+            </Link>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </section>
+
+      {/* SECCIÓN DE CARACTERÍSTICAS (Para que tu compañero la llene) */}
+      <section className="py-20 max-w-7xl mx-auto px-4 w-full">
+        <div className="grid md:grid-cols-3 gap-12">
+          <div className="p-6 border border-slate-100 rounded-2xl bg-white shadow-sm hover:shadow-md transition-shadow">
+            <div className="w-12 h-12 bg-blue-100 text-blue-700 rounded-lg flex items-center justify-center mb-4">
+              <Users size={24} />
+            </div>
+            <h3 className="text-xl font-bold mb-2">Gestión de Clientes</h3>
+            <p className="text-slate-500 text-sm">Registro detallado y seguimiento personalizado para cada estudio socioeconómico.</p>
+          </div>
+
+          <div className="p-6 border border-slate-100 rounded-2xl bg-white shadow-sm hover:shadow-md transition-shadow">
+            <div className="w-12 h-12 bg-green-100 text-green-700 rounded-lg flex items-center justify-center mb-4">
+              <BarChart3 size={24} />
+            </div>
+            <h3 className="text-xl font-bold mb-2">Estadísticas Reales</h3>
+            <p className="text-slate-500 text-sm">Visualización de datos en tiempo real para la toma de decisiones administrativas.</p>
+          </div>
+
+          <div className="p-6 border border-slate-100 rounded-2xl bg-white shadow-sm hover:shadow-md transition-shadow">
+            <div className="w-12 h-12 bg-purple-100 text-purple-700 rounded-lg flex items-center justify-center mb-4">
+              <ShieldCheck size={24} />
+            </div>
+            <h3 className="text-xl font-bold mb-2">Seguridad de Datos</h3>
+            <p className="text-slate-500 text-sm">Protección de información sensible bajo los más altos estándares de Firebase.</p>
+          </div>
         </div>
-      </main>
+      </section>
+
+      {/* FOOTER SIMPLE */}
+      <footer className="bg-slate-900 text-slate-400 py-12 px-4 mt-auto">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
+          <p>© 2026 SocioManager. Todos los derechos reservados.</p>
+          <div className="flex gap-6">
+            <a href="#" className="hover:text-white transition-colors">Privacidad</a>
+            <a href="#" className="hover:text-white transition-colors">Términos</a>
+            <a href="#" className="hover:text-white transition-colors">Contacto</a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
