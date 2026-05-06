@@ -32,9 +32,12 @@ export default function LoginPage() {
             } else {
                 setError("El usuario autenticado no tiene un perfil configurado en la base de datos.");
             }
-        } catch (err) {
-            console.error(err);
-            setError("Error al iniciar sesión. Revisa que tu correo y los 8 dígitos de tu CURP sean correctos.");
+        }  catch (err: any) {
+            console.error("CÓDIGO DE ERROR DE FIREBASE:", err.code); // 👈 AGREGA ESTO
+            console.error("MENSAJE COMPLETO:", err.message);
+
+            // Dejamos tu manejo de errores igual, pero le añadimos el código para saber qué pasa
+            setError(`Error (${err.code}): Revisa tu correo y CURP.`);
         } finally {
             setLoading(false);
         }
