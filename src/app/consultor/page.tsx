@@ -4,7 +4,7 @@ import { db } from '@/firebase/config';
 import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import { ClipboardList, Calendar, FileText, Loader2, Clock, ArrowLeft, ClipboardCheck, AlertCircle } from 'lucide-react';
+import { ClipboardList, Calendar, FileText, Loader2, Clock, ArrowLeft, ClipboardCheck, AlertCircle, Search } from 'lucide-react';
 
 interface Campo {
     id: string;
@@ -80,6 +80,9 @@ export default function DashboardConsultor() {
     const [plantillas, setPlantillas] = useState<Plantilla[]>([]);
     const [registros, setRegistros] = useState<RegistroEncuesta[]>([]);
     const [loadingData, setLoadingData] = useState(true);
+
+    // 🔍 Estado para la barra de búsqueda reactiva
+    const [filtroBusqueda, setFiltroBusqueda] = useState('');
 
     const [respuestasForm, setRespuestasForm] = useState<{ [key: string]: string }>({});
     const [submittingForm, setSubmittingForm] = useState(false);
@@ -183,19 +186,12 @@ export default function DashboardConsultor() {
         return "Expediente de Campo";
     };
 
-    // ⚡ Manejador de cambios en los inputs que fuerza mayúsculas automáticamente si detecta la palabra CURP
     const handleInputChange = (campoLabel: string, campoId: string, valor: string) => {
         let valorProcesado = valor;
-
-        // Si la etiqueta contiene "curp" (sin importar mayúsculas/minúsculas), lo forzamos a mayúsculas
         if (campoLabel.toLowerCase().includes('curp')) {
             valorProcesado = valor.toUpperCase();
         }
-
-        setRespuestasForm({
-            ...respuestasForm,
-            [campoId]: valorProcesado
-        });
+        setRespuestasForm({ ...respuestasForm, [campoId]: valorProcesado });
     };
 
     const handleFormSubmit = async (e: React.FormEvent) => {
@@ -242,6 +238,13 @@ export default function DashboardConsultor() {
         }
     };
 
+    // 🧠 Lógica de Filtrado en Tiempo Real (Ignora acentos y mayúsculas)
+    const registrosFiltrados = registros.filter(reg => {
+        const nombreCompleto = obtenerNombreResumen(reg).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const busquedaLimpia = filtroBusqueda.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        return nombreCompleto.includes(busquedaLimpia);
+    });
+
     if (authLoading || loadingData) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-2">
@@ -268,12 +271,12 @@ export default function DashboardConsultor() {
             {/* REJILLA SPA */}
             <div className="flex-1 max-w-6xl w-full mx-auto flex flex-col md:flex-row gap-6 p-4 md:p-6">
 
-                {/* MENÚ IZQUIERDO ESTÁTICO */}
+                {/* MENÚ IZQUIERDO */}
                 <aside className="w-full md:w-64 shrink-0 bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-2 md:sticky md:top-24 h-fit">
                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider px-3 mb-3">Opciones</p>
 
                     <button
-                        onClick={() => { setVistaActiva('registros'); setErrorForm(''); }}
+                        onClick={() => { setVistaActiva('registros'); setErrorForm(''); setFiltroBusqueda(''); }}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${vistaActiva === 'registros' || vistaActiva === 'detalle-registro'
                                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
                                 : 'text-slate-600 hover:bg-slate-50'
@@ -295,7 +298,7 @@ export default function DashboardConsultor() {
                     </button>
                 </aside>
 
-                {/* PANEL DERECHO DINÁMICO */}
+                {/* PANEL DERECHO */}
                 <main className="flex-1 bg-white border border-slate-100 rounded-2xl p-6 shadow-sm min-h-[450px]">
 
                     {/* HISTORIAL DE RESÚMENES */}
@@ -306,15 +309,33 @@ export default function DashboardConsultor() {
                                 <p className="text-xs text-slate-400">Selecciona un beneficiario para auditar su expediente completo.</p>
                             </div>
 
+                            {/* ⚡ BARRA DE BÚSQUEDA PREDICTIVA SUPERIOR */}
+                            {registros.length > 0 && (
+                                <div className="relative w-full mb-4">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                                        <Search size={16} />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={filtroBusqueda}
+                                        onChange={(e) => setFiltroBusqueda(e.target.value)}
+                                        placeholder="Busca por nombre y/o apellidos"
+                                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-inner"
+                                    />
+                                </div>
+                            )}
+
                             {registros.length === 0 ? (
                                 <div className="text-center py-12 text-slate-400 text-sm">No hay expedientes capturados en tu bitácora.</div>
+                            ) : registrosFiltrados.length === 0 ? (
+                                <div className="text-center py-12 text-slate-400 text-sm">No se encontraron coincidencias para "{filtroBusqueda}".</div>
                             ) : (
                                 <div className="grid grid-cols-1 gap-3">
-                                    {registros.map((reg) => (
+                                    {registrosFiltrados.map((reg) => (
                                         <div
                                             key={reg.id}
                                             onClick={() => { setRegistroSeleccionado(reg); setVistaActiva('detalle-registro'); }}
-                                            className="border border-slate-100 hover:border-blue-300 bg-white p-5 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer border-l-4 border-l-blue-600"
+                                            className="border border-slate-100 hover:border-blue-300 bg-white p-5 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer border-l-4 border-l-blue-600 animate-in fade-in duration-150"
                                         >
                                             <h3 className="font-black text-blue-700 text-base tracking-wide uppercase">
                                                 {obtenerNombreResumen(reg)}
