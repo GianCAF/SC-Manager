@@ -1,10 +1,10 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { db } from '@/firebase/config';
-import { collection, query, where, getDocs, addDoc, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import { ClipboardList, Calendar, FileText, Loader2, User, Clock, ArrowLeft, ClipboardCheck, AlertCircle } from 'lucide-react';
+import { ClipboardList, Calendar, FileText, Loader2, Clock, ArrowLeft, ClipboardCheck, AlertCircle } from 'lucide-react';
 
 interface Campo {
     id: string;
@@ -28,7 +28,6 @@ interface RegistroEncuesta {
     respuestas: { [key: string]: any };
 }
 
-// 🧠 Selector de Fecha por Tres Clics Integrado
 function SelectorFechaDinamico({ required, disabled, onChange }: { required: boolean, disabled: boolean, onChange: (val: string) => void }) {
     const hoy = new Date();
     const anioActual = hoy.getFullYear();
@@ -46,18 +45,26 @@ function SelectorFechaDinamico({ required, disabled, onChange }: { required: boo
     ];
     const dias = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'));
 
-    useEffect(() => {
-        if (dia && mes && anio) {
-            onChange(`${anio}-${mes}-${dia}`);
-        }
-    }, [dia, mes, anio, onChange]);
+    const handleDiaChange = (v: string) => {
+        setDia(v);
+        if (v && mes && anio) onChange(`${anio}-${mes}-${v}`);
+    };
+
+    const handleMesChange = (v: string) => {
+        setMes(v);
+        if (dia && v && anio) onChange(`${anio}-${v}-${dia}`);
+    };
+
+    const handleAnioChange = (v: string) => {
+        setAnio(v);
+        if (dia && mes && v) onChange(`${v}-${mes}-${dia}`);
+    };
 
     return (
         <div className="grid grid-cols-3 gap-2 mt-1">
-            {/* Diá, Mes, Año selectores */}
-            <select required={required} disabled={disabled} value={dia} onChange={(e) => setDia(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 outline-none text-sm font-semibold text-slate-700 focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"><option value="">Día</option>{dias.map(d => <option key={d} value={d}>{d}</option>)}</select>
-            <select required={required} disabled={disabled} value={mes} onChange={(e) => setMes(e.target.value)} className="w-full px-2 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 outline-none text-sm font-semibold text-slate-700 focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"><option value="">Mes</option>{meses.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}</select>
-            <select required={required} disabled={disabled} value={anio} onChange={(e) => setAnio(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 outline-none text-sm font-semibold text-slate-700 focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"><option value="">Año</option>{anios.map(a => <option key={a} value={a}>{a}</option>)}</select>
+            <select required={required} disabled={disabled} value={dia} onChange={(e) => handleDiaChange(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all"><option value="">Día</option>{dias.map(d => <option key={d} value={d}>{d}</option>)}</select>
+            <select required={required} disabled={disabled} value={mes} onChange={(e) => handleMesChange(e.target.value)} className="w-full px-2 py-2.5 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all"><option value="">Mes</option>{meses.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}</select>
+            <select required={required} disabled={disabled} value={anio} onChange={(e) => handleAnioChange(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all"><option value="">Año</option>{anios.map(a => <option key={a} value={a}>{a}</option>)}</select>
         </div>
     );
 }
@@ -66,19 +73,14 @@ export default function DashboardConsultor() {
     const { user, role, logout, loading: authLoading } = useAuth();
     const router = useRouter();
 
-    // Estados de navegación interna SPA (Single Page Experience)
-    // Valores: 'registros' | 'detalle-registro' | 'agendar' | 'llenar'
     const [vistaActiva, setVistaActiva] = useState<'registros' | 'detalle-registro' | 'agendar' | 'llenar'>('registros');
-
     const [registroSeleccionado, setRegistroSeleccionado] = useState<RegistroEncuesta | null>(null);
     const [plantillaSeleccionada, setPlantillaSeleccionada] = useState<Plantilla | null>(null);
 
-    // Estados de datos de Firestore
     const [plantillas, setPlantillas] = useState<Plantilla[]>([]);
     const [registros, setRegistros] = useState<RegistroEncuesta[]>([]);
     const [loadingData, setLoadingData] = useState(true);
 
-    // Estados para el motor de llenado interno
     const [respuestasForm, setRespuestasForm] = useState<{ [key: string]: string }>({});
     const [submittingForm, setSubmittingForm] = useState(false);
     const [errorForm, setErrorForm] = useState('');
@@ -90,7 +92,6 @@ export default function DashboardConsultor() {
         }
     }, [role, authLoading, router]);
 
-    // Función reutilizable para cargar datos de Firestore
     const cargarDatosDashboard = async () => {
         if (!user?.uid) return;
         try {
@@ -133,23 +134,38 @@ export default function DashboardConsultor() {
         });
     };
 
-    // Helper de UX: Extrae dinámicamente el nombre completo guardado en las respuestas
-    // 🧠 Extractor inteligente ajustado al formato: Nombre(s), Apellido Paterno, Apellido Materno
-    const obtenerNombreResumen = (respuestas: { [key: string]: any }) => {
+    // 🧠 Extractor determinista y blindado contra desorden de llaves en JavaScript
+    const obtenerNombreResumen = (reg: RegistroEncuesta) => {
+        const respuestas = reg.respuestas;
         const llaves = Object.keys(respuestas);
 
-        // Función para estandarizar el texto (quita acentos, paréntesis y espacios de más)
         const normalizar = (txt: string) =>
-            txt.toLowerCase()
-                .normalize("NFD")
-                .replace(/[\u0300-\u036f]/g, "") // Quita acentos
-                .replace(/[()]/g, "")           // Quita paréntesis como los de Nombre(s)
-                .trim();
+            txt.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[()]/g, "").trim();
 
-        // Buscamos las llaves reales usando búsquedas difusas normalizadas
+        // Estrategia A: Buscar usando la plantilla original vinculada
+        const plantillaOriginal = plantillas.find(p => p.id === reg.plantillaId);
+        if (plantillaOriginal && plantillaOriginal.campos) {
+            const campoNom = plantillaOriginal.campos.find(c => {
+                const l = normalizar(c.label);
+                return l.includes('nombre') && !l.includes('paterno') && !l.includes('materno');
+            });
+            const campoPat = plantillaOriginal.campos.find(c => normalizar(c.label).includes('paterno'));
+            const campoMat = plantillaOriginal.campos.find(c => normalizar(c.label).includes('materno'));
+
+            // Intentamos recuperar los datos usando la etiqueta exacta de la plantilla
+            if (campoNom) {
+                const nom = respuestas[campoNom.label] || '';
+                const pat = campoPat ? respuestas[campoPat.label] || '' : '';
+                const mat = campoMat ? respuestas[campoMat.label] || '' : '';
+                const completo = `${nom} ${pat} ${mat}`.trim().replace(/\s+/g, ' ');
+                if (completo) return completo;
+            }
+        }
+
+        // Estrategia B: Búsqueda difusa estricta en las llaves si la plantilla no coincide
         const llaveNombre = llaves.find(k => {
-            const limpio = normalizar(k);
-            return limpio.includes('nombre') && !limpio.includes('paterno') && !limpio.includes('materno');
+            const l = normalizar(k);
+            return l.includes('nombre') && !l.includes('paterno') && !l.includes('materno');
         });
         const llavePaterno = llaves.find(k => normalizar(k).includes('paterno'));
         const llaveMaterno = llaves.find(k => normalizar(k).includes('materno'));
@@ -158,18 +174,21 @@ export default function DashboardConsultor() {
             const nom = respuestas[llaveNombre] || '';
             const pat = llavePaterno ? respuestas[llavePaterno] || '' : '';
             const mat = llaveMaterno ? respuestas[llaveMaterno] || '' : '';
-
-            // Unimos y limpiamos espacios dobles si el usuario no metió algún apellido
             const completo = `${nom} ${pat} ${mat}`.trim().replace(/\s+/g, ' ');
             if (completo) return completo;
         }
 
-        // Fallback de seguridad si el formato cambia drásticamente
-        if (llaves.length > 0) return String(respuestas[llaves[0]]);
+        // Fallback C: Si no hay campos de nombre, ordenamos las llaves alfabéticamente para que NUNCA cambie al recargar
+        if (llaves.length > 0) {
+            const llavesOrdenadas = [...llaves].sort();
+            // Intentamos evadir campos comunes que sabemos que no son el nombre (fechas, curp)
+            const llaveFiltro = llavesOrdenadas.find(k => !normalizar(k).includes('fecha') && !normalizar(k).includes('curp')) || llavesOrdenadas[0];
+            return String(respuestas[llaveFiltro]);
+        }
+
         return "Expediente de Campo";
     };
 
-    // Manejador del submit del formulario integrado
     const handleFormSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
@@ -185,18 +204,21 @@ export default function DashboardConsultor() {
         setErrorForm('');
 
         try {
+            const respuestasEstructuradas: { [key: string]: any } = {};
+            plantillaSeleccionada?.campos.forEach(campo => {
+                respuestasEstructuredas[campo.label] = respuestasForm[campo.id] || '';
+            });
+
             await addDoc(collection(db, "respuestas_formularios"), {
                 plantillaId: plantillaSeleccionada?.id,
                 formatoTitulo: plantillaSeleccionada?.titulo,
-                respuestas: respuestasForm,
+                respuestas: respuestasEstructuradas,
                 encuestador: { uid: user.uid, nombre: user.displayName, email: user.email },
                 createdAt: new Date().toISOString()
             });
 
             setSuccessForm(true);
             setRespuestasForm({});
-
-            // Sincronizamos la lista en segundo plano y volvemos
             await cargarDatosDashboard();
 
             setTimeout(() => {
@@ -234,10 +256,10 @@ export default function DashboardConsultor() {
                 </div>
             </header>
 
-            {/* REJILLA DE TRABAJO */}
+            {/* REJILLA SPA */}
             <div className="flex-1 max-w-6xl w-full mx-auto flex flex-col md:flex-row gap-6 p-4 md:p-6">
 
-                {/* MENÚ IZQUIERDO ESTÁTICO (SIEMPRE VISIBLE) */}
+                {/* MENÚ IZQUIERDO ESTÁTICO */}
                 <aside className="w-full md:w-64 shrink-0 bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-2 md:sticky md:top-24 h-fit">
                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider px-3 mb-3">Opciones</p>
 
@@ -264,10 +286,10 @@ export default function DashboardConsultor() {
                     </button>
                 </aside>
 
-                {/* CONTENEDOR DE CONTENIDO DINÁMICO DERECHO */}
+                {/* PANEL DERECHO DINÁMICO */}
                 <main className="flex-1 bg-white border border-slate-100 rounded-2xl p-6 shadow-sm min-h-[450px]">
 
-                    {/* FASE 1: HISTORIAL DE RESÚMENES */}
+                    {/* HISTORIAL DE RESÚMENES */}
                     {vistaActiva === 'registros' && (
                         <div className="space-y-4">
                             <div className="border-b border-slate-100 pb-3">
@@ -283,14 +305,13 @@ export default function DashboardConsultor() {
                                         <div
                                             key={reg.id}
                                             onClick={() => { setRegistroSeleccionado(reg); setVistaActiva('detalle-registro'); }}
-                                            className="border border-slate-100 hover:border-blue-200 bg-white p-4 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer"
+                                            className="border border-slate-100 hover:border-blue-300 bg-white p-5 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer border-l-4 border-l-blue-600"
                                         >
-                                            {/* ⚡ Resaltado de Nombre en Azul Contraste de Alta UX */}
-                                            <h3 className="font-extrabold text-blue-600 text-base tracking-wide uppercase">
-                                                {obtenerNombreResumen(reg.respuestas)}
+                                            {/* ⚡ Contraste Azul Intenso 100% Determinado */}
+                                            <h3 className="font-black text-blue-700 text-base tracking-wide uppercase">
+                                                {obtenerNombreResumen(reg)}
                                             </h3>
-                                            {/* Fecha y actualización debajo */}
-                                            <p className="text-xs text-slate-400 font-medium flex items-center gap-1 mt-1.5">
+                                            <p className="text-xs text-slate-400 font-medium flex items-center gap-1 mt-2">
                                                 <Clock size={12} className="text-slate-300" />
                                                 Realizado el: <span className="text-slate-600 font-semibold">{formatIdaFecha(reg.createdAt)}</span>
                                             </p>
@@ -301,33 +322,32 @@ export default function DashboardConsultor() {
                         </div>
                     )}
 
-                    {/* FASE 2: DETALLE DEL REGISTRO EN EL MISMO ESPACIO */}
+                    {/* DETALLE DEL REGISTRO */}
                     {vistaActiva === 'detalle-registro' && registroSeleccionado && (
                         <div className="space-y-5 animate-in fade-in duration-200">
                             <div className="border-b border-slate-100 pb-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
                                 <div>
                                     <span className="text-[10px] font-black uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Expediente Completo</span>
-                                    <h2 className="text-xl font-black text-slate-900 mt-1 uppercase text-blue-600 tracking-wide">
-                                        {obtenerNombreResumen(registroSeleccionado.respuestas)}
+                                    <h2 className="text-xl font-black text-blue-700 mt-1 uppercase tracking-wide">
+                                        {obtenerNombreResumen(registroSeleccionado)}
                                     </h2>
                                     <p className="text-xs text-slate-400 mt-0.5">Capturado en: {registroSeleccionado.formatoTitulo}</p>
                                 </div>
-                                {/* ⚡ Botón Cerrar Expediente integrado en el espacio */}
                                 <button
                                     onClick={() => { setVistaActiva('registros'); setRegistroSeleccionado(null); }}
-                                    className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-md self-start md:self-center"
+                                    className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-md self-start md:self-center"
                                 >
                                     Cerrar Expediente
                                 </button>
                             </div>
 
                             <div className="grid grid-cols-1 gap-3.5">
-                                {Object.entries(registroSeleccionado.respuestas).map(([campoId, valor]) => (
-                                    <div key={campoId} className="bg-slate-50 border border-slate-100 p-4 rounded-xl">
-                                        <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider">{campoId}</p>
+                                {Object.entries(registroSeleccionado.respuestas).map(([labelPregunta, valor]) => (
+                                    <div key={labelPregunta} className="bg-slate-50 border border-slate-100 p-4 rounded-xl">
+                                        <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider">{labelPregunta}</p>
                                         <p className="text-sm font-bold text-slate-800 mt-1">
                                             {typeof valor === 'string' && valor.match(/^\d{4}-\d{2}-\d{2}$/)
-                                                ? valor.split('-').reverse().join('/') // Formato dd/mm/yyyy
+                                                ? valor.split('-').reverse().join('/')
                                                 : String(valor)
                                             }
                                         </p>
@@ -337,7 +357,7 @@ export default function DashboardConsultor() {
                         </div>
                     )}
 
-                    {/* FASE 3: LISTADO DE FORMATOS PARA AGENDAR */}
+                    {/* LISTADO DE FORMATOS */}
                     {vistaActiva === 'agendar' && (
                         <div className="space-y-4">
                             <div className="border-b border-slate-100 pb-3">
@@ -364,7 +384,7 @@ export default function DashboardConsultor() {
                         </div>
                     )}
 
-                    {/* FASE 4: FORMULARIO DE CAPTURA EN EL MISMO ESPACIO */}
+                    {/* FORMULARIO DE CAPTURA */}
                     {vistaActiva === 'llenar' && plantillaSeleccionada && (
                         <div className="space-y-5 animate-in fade-in duration-200">
                             <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
