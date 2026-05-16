@@ -74,11 +74,16 @@ export default function AdminDashboard() {
                 </Link>
 
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                    <div className="w-12 h-12 bg-green-100 text-green-700 rounded-xl flex items-center justify-center mb-4">
-                        <Users size={24} />
-                    </div>
-                    <h3 className="text-lg font-bold text-slate-800">Registrar Consultor</h3>
-                    <p className="text-slate-500 text-sm mt-1">Da de alta al personal de campo y automatiza sus claves de acceso mediante su CURP.</p>
+                    <Link
+                        href="../admin/consultores/nuevo/"
+                        className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-green-500 hover:shadow-md transition-all block group"
+                    >
+                        <div className="w-12 h-12 bg-green-100 text-green-700 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                            <Users size={24} />
+                        </div>
+                        <h3 className="text-lg font-bold text-slate-800">Registrar Consultor</h3>
+                        <p className="text-slate-500 text-sm mt-1">Da de alta al personal de campo y automatiza sus claves de acceso mediante su CURP.</p>
+                    </Link>
                 </div>
 
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
