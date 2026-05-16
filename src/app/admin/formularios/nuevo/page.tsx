@@ -5,7 +5,7 @@ import { db } from '@/firebase/config';
 import { collection, addDoc } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import {
-    Plus, Trash2, Save, ArrowLeft, Layout, ListChecks, AlertCircle, Loader2
+    Plus, Trash2, Save, ArrowLeft, Layout, ListChecks, AlertCircle, Loader2, HelpCircle
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -16,6 +16,14 @@ interface Campo {
     required: boolean;
 }
 
+// 💡 Diccionario de recomendaciones técnicas para optimizar almacenamiento y UX
+const RECOMENDACIONES = {
+    text: "Ideal para respuestas cortas (nombres, folios, CURP). Optimiza el almacenamiento para textos de menos de 255 caracteres.",
+    number: "Obligatorio si planeas hacer cálculos estadísticos, gráficas, sumas o promedios con esta respuesta.",
+    date: "Formatea automáticamente un calendario. Úsalo para fechas de nacimiento, días de visita o registros cronológicos.",
+    textarea: "Úsalo para descripciones largas, observaciones de campo, comentarios o notas de texto libre sin límite estricto."
+};
+
 export default function DiseñadorFormularios() {
     const { user, role, loading: authLoading } = useAuth();
     const router = useRouter();
@@ -25,6 +33,9 @@ export default function DiseñadorFormularios() {
     const [campos, setCampos] = useState<Campo[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+
+    // Estado para controlar qué recomendación mostrar por cada campo en hover
+    const [hoveredType, setHoveredType] = useState<{ [key: string]: string | null }>({});
 
     if (authLoading) return <div className="p-10 text-center animate-pulse">Cargando constructor...</div>;
     if (role !== 'admin') {
@@ -80,7 +91,7 @@ export default function DiseñadorFormularios() {
     return (
         <div className="min-h-screen bg-slate-50 pb-20 relative">
 
-            {/* ⚡ BOTÓN FLOTANTE INTELIGENTE (Accesibilidad de UX) */}
+            {/* BOTÓN FLOTANTE (FAB) */}
             <button
                 onClick={agregarCampo}
                 title="Añadir nueva pregunta"
@@ -163,42 +174,69 @@ export default function DiseñadorFormularios() {
                         </div>
                     ) : (
                         <div className="space-y-4">
-                            {campos.map((campo, index) => (
-                                <div key={campo.id} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex flex-col md:flex-row gap-4 items-start md:items-end">
-                                    <div className="flex-grow w-full">
-                                        <label className="block text-[11px] font-black text-slate-400 uppercase mb-1.5">
-                                            Pregunta / Etiqueta {index + 1}
-                                        </label>
-                                        <input
-                                            type="text" value={campo.label}
-                                            onChange={(e) => actualizarCampo(campo.id, { label: e.target.value })}
-                                            placeholder="¿Cuál es su...?"
-                                            className="w-full px-4 py-2.5 rounded-lg border border-slate-100 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm font-semibold"
-                                        />
-                                    </div>
+                            {campos.map((campo, index) => {
+                                // Determinar qué recomendación mostrar (la del tipo en hover, o por defecto la del tipo seleccionado)
+                                const tipoActivo = hoveredType[campo.id] || campo.type;
+                                const recomendacionTexto = RECOMENDACIONES[tipoActivo as keyof typeof RECOMENDACIONES];
 
-                                    <div className="w-full md:w-48">
-                                        <label className="block text-[11px] font-black text-slate-400 uppercase mb-1.5">Tipo de Respuesta</label>
-                                        <select
-                                            value={campo.type}
-                                            onChange={(e) => actualizarCampo(campo.id, { type: e.target.value as any })}
-                                            className="w-full px-3 py-2.5 rounded-lg border border-slate-100 bg-slate-50 outline-none text-sm font-medium"
+                                return (
+                                    <div key={campo.id} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 flex flex-col gap-4 transition-all hover:border-slate-300">
+
+                                        <div className="flex flex-col md:flex-row gap-4 items-start md:items-end">
+                                            {/* Entrada de Pregunta */}
+                                            <div className="flex-grow w-full">
+                                                <label className="block text-[11px] font-black text-slate-400 uppercase mb-1.5">
+                                                    Pregunta / Etiqueta {index + 1}
+                                                </label>
+                                                <input
+                                                    type="text" value={campo.label}
+                                                    onChange={(e) => actualizarCampo(campo.id, { label: e.target.value })}
+                                                    placeholder="¿Cuál es su...?"
+                                                    className="w-full px-4 py-2.5 rounded-lg border border-slate-100 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm font-semibold"
+                                                />
+                                            </div>
+
+                                            {/* Selector de Tipo con Manejo de Hover Interno */}
+                                            <div className="w-full md:w-48 relative">
+                                                <label className="block text-[11px] font-black text-slate-400 uppercase mb-1.5 flex items-center gap-1">
+                                                    Tipo de Respuesta
+                                                </label>
+                                                <select
+                                                    value={campo.type}
+                                                    onChange={(e) => actualizarCampo(campo.id, { type: e.target.value as any })}
+                                                    className="w-full px-3 py-2.5 rounded-lg border border-slate-100 bg-slate-50 outline-none text-sm font-medium focus:ring-2 focus:ring-blue-500 transition-all"
+                                                >
+                                                    <option value="text" onMouseEnter={() => setHoveredType({ ...hoveredType, [campo.id]: 'text' })}>Abierta (Texto)</option>
+                                                    <option value="number" onMouseEnter={() => setHoveredType({ ...hoveredType, [campo.id]: 'number' })}>Numérica</option>
+                                                    <option value="date" onMouseEnter={() => setHoveredType({ ...hoveredType, [campo.id]: 'date' })}>Fecha</option>
+                                                    <option value="textarea" onMouseEnter={() => setHoveredType({ ...hoveredType, [campo.id]: 'textarea' })}>Párrafo Largo</option>
+                                                </select>
+                                            </div>
+
+                                            {/* Botón Eliminar */}
+                                            <button
+                                                onClick={() => eliminarCampo(campo.id)}
+                                                className="p-2.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all self-end md:mb-0.5"
+                                            >
+                                                <Trash2 size={20} />
+                                            </button>
+                                        </div>
+
+                                        {/* 🧠 RECUADRO DINÁMICO DE RECOMENDACIÓN TÉCNICA */}
+                                        <div
+                                            onMouseLeave={() => setHoveredType({ ...hoveredType, [campo.id]: null })}
+                                            className="bg-blue-50/50 border border-blue-100/50 rounded-xl px-4 py-2.5 flex items-start gap-2.5 animate-in fade-in duration-200"
                                         >
-                                            <option value="text">Abierta (Texto)</option>
-                                            <option value="number">Numérica</option>
-                                            <option value="date">Fecha</option>
-                                            <option value="textarea">Párrafo Largo</option>
-                                        </select>
-                                    </div>
+                                            <HelpCircle size={15} className="text-blue-500 mt-0.5 shrink-0" />
+                                            <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                                                <span className="font-bold text-blue-700 uppercase text-[10px] tracking-wider block mb-0.5">Sugerencia de Optimización:</span>
+                                                {recomendacionTexto}
+                                            </p>
+                                        </div>
 
-                                    <button
-                                        onClick={() => eliminarCampo(campo.id)}
-                                        className="p-2.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all self-end md:mb-0.5"
-                                    >
-                                        <Trash2 size={20} />
-                                    </button>
-                                </div>
-                            ))}
+                                    </div>
+                                );
+                            })}
                         </div>
                     )}
                 </div>
