@@ -6,7 +6,8 @@ import { db } from '@/firebase/config';
 import { collection, onSnapshot, query, orderBy, addDoc, doc, updateDoc, deleteDoc, getDocs } from 'firebase/firestore';
 import {
     FilePlus, Users, Settings, FileText, Calendar, ChevronRight, UserPlus, Phone, MapPin, Shield,
-    Trash2, Plus, Save, Type, Hash, AlignLeft, Loader2, AlertCircle, CheckCircle2, Eye, LayoutGrid, X, Edit3, BarChart3
+    Trash2, Plus, Save, Type, Hash, AlignLeft, Loader2, AlertCircle,
+    CheckCircle2, Eye, LayoutGrid, X, BarChart3
 } from 'lucide-react';
 
 interface Campo {
@@ -29,27 +30,26 @@ export default function AdminDashboard() {
     const { user, role, loading } = useAuth();
     const router = useRouter();
 
-    // 🔄 Control de Navegación SPA interna para el contenedor derecho
-    // Valores: 'dashboard' | 'editor' | 'registrar-consultor' | 'metricas'
+    // Navigation state
     const [vistaActiva, setVistaActiva] = useState<'dashboard' | 'editor' | 'registrar-consultor' | 'metricas'>('dashboard');
 
-    // Estados de datos de Firestore
+    // Data states
     const [plantillas, setPlantillas] = useState<Plantilla[]>([]);
     const [loadingDocs, setLoadingDocs] = useState(true);
     const [totalEncuestasSincronizadas, setTotalEncuestasSincronizadas] = useState(0);
 
-    // Estados para el Constructor / Editor de Plantillas
+    // Form states
     const [editandoId, setEditandoId] = useState<string | null>(null);
     const [titulo, setTitulo] = useState('');
     const [descripcion, setDescripcion] = useState('');
     const [campos, setCampos] = useState<Campo[]>([]);
 
-    // Estados para añadir campos individuales
+    // Individual field generator states
     const [labelCampo, setLabelCampo] = useState('');
     const [tipoCampo, setTipoCampo] = useState<'text' | 'number' | 'date' | 'textarea'>('text');
     const [requeridoCampo, setRequeridoCampo] = useState(true);
 
-    // Estados integrados para el Formulario de Registro de Consultores
+    // Consultant registration states
     const [nombreCon, setNombreCon] = useState('');
     const [emailCon, setEmailCon] = useState('');
     const [curpCon, setCurpCon] = useState('');
@@ -57,19 +57,19 @@ export default function AdminDashboard() {
     const [telefonoCon, setTelefonoCon] = useState('');
     const [direccionCon, setDireccionCon] = useState('');
 
-    // Estados de retroalimentación e hilos de carga
+    // Feedback states
     const [errorMsg, setErrorMsg] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
     const [submitting, setSubmitting] = useState(false);
 
-    // 1. 🛡️ Protección de ruta
+    // Security route protection
     useEffect(() => {
         if (!loading && role !== 'admin') {
             router.push('/');
         }
     }, [role, loading, router]);
 
-    // 2. 🔌 Escucha de plantillas y métricas en tiempo real
+    // Real-time Firestore listeners
     useEffect(() => {
         if (role !== 'admin') return;
 
@@ -83,7 +83,6 @@ export default function AdminDashboard() {
             setLoadingDocs(false);
         });
 
-        // Carga inicial de métricas globales de encuestas respondidas
         const calcularMetricas = async () => {
             try {
                 const snap = await getDocs(collection(db, "respuestas_formularios"));
@@ -97,7 +96,7 @@ export default function AdminDashboard() {
         return () => unsubscribe();
     }, [role]);
 
-    // --- Lógica del Constructor Dinámico ---
+    // --- Dynamic Form Builder Logic ---
     const agregarCampoALista = () => {
         if (!labelCampo.trim()) {
             setErrorMsg("La etiqueta del campo no puede estar vacía.");
@@ -112,6 +111,11 @@ export default function AdminDashboard() {
         setCampos([...campos, nuevoCampo]);
         setLabelCampo('');
         setErrorMsg('');
+    };
+
+    // ⚡ ACTUALIZACIÓN EN CALIENTE: Permite editar cualquier propiedad de un campo ya existente
+    const modificarCampoExistente = (id: string, propiedadesNuevas: Partial<Campo>) => {
+        setCampos(campos.map(campo => campo.id === id ? { ...campo, ...propiedadesNuevas } : campo));
     };
 
     const eliminarCampoDeLista = (id: string) => {
@@ -147,6 +151,13 @@ export default function AdminDashboard() {
             return;
         }
 
+        // Validar que ningún campo existente haya quedado en blanco tras editarlo
+        const tieneCamposVacios = campos.some(c => !c.label.trim());
+        if (tieneCamposVacios) {
+            setErrorMsg("Todas las preguntas de los campos deben tener un texto válido.");
+            return;
+        }
+
         setSubmitting(true);
         setErrorMsg('');
 
@@ -154,7 +165,7 @@ export default function AdminDashboard() {
             const datosPlantilla = {
                 titulo: titulo.trim(),
                 descripcion: descripcion.trim(),
-                campos: campos,
+                campos: campos.map(c => ({ ...c, label: c.label.trim() })), // Limpiamos espacios extras
                 activo: true,
                 updatedAt: new Date().toISOString()
             };
@@ -202,10 +213,9 @@ export default function AdminDashboard() {
         }
     };
 
-    // --- Lógica de Registro de Consultores (Ruta absoluta segura) ---
+    // --- Consultant Registration Logic ---
     const handleRegistroConsultor = async (e: React.FormEvent) => {
         e.preventDefault();
-
         if (curpCon.length !== 18) {
             setErrorMsg("La CURP debe tener exactamente 18 caracteres.");
             return;
@@ -216,14 +226,13 @@ export default function AdminDashboard() {
         setSuccessMsg('');
 
         try {
-            // 🚀 Usamos la ruta absoluta de la API para blindar fallos de ruteo
             const response = await fetch('/api/auth/admin/register-consultor/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     nombre: nombreCon,
                     email: emailCon,
-                    curp: curpCon.toUpperCase(), // Forzado estricto
+                    curp: curpCon.toUpperCase(),
                     municipio: municipioCon,
                     telefono: telefonoCon,
                     direccion: direccionCon
@@ -237,8 +246,6 @@ export default function AdminDashboard() {
             }
 
             setSuccessMsg(`¡Consultor registrado! Contraseña inicial: ${data.password_generated}`);
-
-            // Limpieza de campos
             setNombreCon('');
             setEmailCon('');
             setCurpCon('');
@@ -250,16 +257,6 @@ export default function AdminDashboard() {
             setErrorMsg(err.message);
         } finally {
             setSubmitting(false);
-        }
-    };
-
-    const obtenerIconoTipo = (type: string) => {
-        switch (type) {
-            case 'text': return <Type size={14} className="text-blue-500" />;
-            case 'number': return <Hash size={14} className="text-green-500" />;
-            case 'date': return <Calendar size={14} className="text-amber-500" />;
-            case 'textarea': return <AlignLeft size={14} className="text-purple-500" />;
-            default: return <Type size={14} />;
         }
     };
 
@@ -279,10 +276,10 @@ export default function AdminDashboard() {
                 </div>
             </header>
 
-            {/* REJILLA SPA CENTRAL */}
+            {/* WORKSPACE */}
             <div className="flex-1 max-w-7xl w-full mx-auto flex flex-col md:flex-row gap-6 p-4 md:p-6">
 
-                {/* MENÚ IZQUIERDO ESTÁTICO UNIFICADO */}
+                {/* SIDEBAR */}
                 <aside className="w-full md:w-64 shrink-0 bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-2 md:sticky md:top-24 h-fit">
                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider px-3 mb-3">Módulos</p>
 
@@ -304,7 +301,6 @@ export default function AdminDashboard() {
                         Registrar Consultor
                     </button>
 
-                    {/* 📊 NUEVA PESTAÑA METRICAS EN MENÚ IZQUIERDO */}
                     <button
                         onClick={() => { setVistaActiva('metricas'); setErrorMsg(''); setSuccessMsg(''); }}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${vistaActiva === 'metricas' ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'text-slate-600 hover:bg-slate-50'
@@ -315,17 +311,16 @@ export default function AdminDashboard() {
                     </button>
                 </aside>
 
-                {/* PANEL DERECHO CON CONTENIDOS FLUIDOS */}
+                {/* CONTAINER */}
                 <main className="flex-1 bg-white border border-slate-100 rounded-2xl p-6 shadow-sm min-h-[520px]">
 
-                    {/* MENSAJES DE RESPUESTA INTEGRADOS */}
                     {successMsg && !vistaActiva.includes('registrar') && (
                         <div className="mb-4 bg-green-50 text-green-800 border border-green-100 p-4 rounded-xl flex items-center gap-2.5 text-xs font-semibold animate-in fade-in">
                             <CheckCircle2 size={16} className="text-green-600" /> {successMsg}
                         </div>
                     )}
 
-                    {/* ─── FASE 1: LISTADO DE PLANTILLAS Y ACCESO RÁPIDO ─── */}
+                    {/* VISTA 1: DASHBOARD DE FORMATOS */}
                     {vistaActiva === 'dashboard' && (
                         <div className="space-y-6 animate-in fade-in duration-200">
                             <div className="flex justify-between items-center border-b border-slate-100 pb-4">
@@ -372,10 +367,9 @@ export default function AdminDashboard() {
                         </div>
                     )}
 
-                    {/* ─── FASE 2: CONSTRUCTOR / EDITOR DINÁMICO DE FORMULARIO ─── */}
+                    {/* VISTA 2: CONSTRUCTOR / EDITOR DINÁMICO DE FORMULARIO */}
                     {vistaActiva === 'editor' && (
                         <div className="space-y-5 animate-in fade-in duration-200">
-                            {/* Contenido del editor idéntico al anterior */}
                             <div className="border-b border-slate-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                 <div>
                                     <span className="text-[10px] font-black uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{editandoId ? "Modo Editor" : "Diseñador"}</span>
@@ -394,8 +388,9 @@ export default function AdminDashboard() {
                                     <div className="space-y-1"><label className="text-xs font-bold text-slate-700">Descripción / Objetivo</label><input type="text" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Ej. Notas básicas" className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-blue-600 transition-all text-slate-500" /></div>
                                 </div>
 
+                                {/* INSERTAR PREGUNTAS NUEVAS */}
                                 <div className="border border-dashed border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-3">
-                                    <p className="text-xs font-black text-slate-800 uppercase tracking-tight flex items-center gap-1"><Plus size={14} className="text-blue-600" /> Añadir Pregunta al Formato</p>
+                                    <p className="text-xs font-black text-slate-800 uppercase tracking-tight flex items-center gap-1"><Plus size={14} className="text-blue-600" /> Crear Nuevo Campo</p>
                                     <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
                                         <div className="md:col-span-6 space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase">Pregunta / Etiqueta</label><input type="text" value={labelCampo} onChange={(e) => setLabelCampo(e.target.value)} placeholder="Ej. Nombre(s)" className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium" /></div>
                                         <div className="md:col-span-3 space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase">Tipo de Respuesta</label><select value={tipoCampo} onChange={(e) => setTipoCampo(e.target.value as any)} className="w-full px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none h-8"><option value="text">Texto Corto</option><option value="number">Numérica</option><option value="date">Fecha (Calendario)</option><option value="textarea">Párrafo Largo</option></select></div>
@@ -404,14 +399,72 @@ export default function AdminDashboard() {
                                     </div>
                                 </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-xs font-black text-slate-700 uppercase tracking-tight flex items-center gap-1"><Eye size={14} className="text-slate-400" /> Estructura del Formulario ({campos.length})</label>
-                                    {campos.length === 0 ? (<div className="text-center py-6 border border-dashed border-slate-200 rounded-xl text-xs text-slate-400 font-medium">El formato no tiene campos asignados aún.</div>) : (
-                                        <div className="grid grid-cols-1 gap-2 max-h-[180px] overflow-y-auto pr-1">
+                                {/* ⚡ ESTRUCTURA DE CAMPOS EDICIÓN EN CALIENTE EN LA LISTA SECUENCIAL */}
+                                <div className="space-y-3">
+                                    <label className="text-xs font-black text-slate-700 uppercase tracking-tight flex items-center gap-1">
+                                        <FileText size={14} className="text-slate-400" /> Lista de Reactivos Activos ({campos.length})
+                                    </label>
+
+                                    {campos.length === 0 ? (
+                                        <div className="text-center py-6 border border-dashed border-slate-200 rounded-xl text-xs text-slate-400 font-medium">El formato no tiene campos asignados aún.</div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 gap-3 max-h-[320px] overflow-y-auto pr-1">
                                             {campos.map((campo, index) => (
-                                                <div key={campo.id} className="border border-slate-100 bg-slate-50 rounded-xl px-4 py-2 flex justify-between items-center">
-                                                    <div className="flex items-center gap-3"><span className="w-5 h-5 bg-slate-200 text-slate-600 font-black text-[10px] rounded-full flex items-center justify-center shrink-0">{index + 1}</span><div className="flex items-center gap-2 text-xs font-bold text-slate-800">{obtenerIconoTipo(campo.type)}<span>{campo.label}</span>{campo.required && <span className="text-red-500 font-black">*</span>}</div></div>
-                                                    <button type="button" onClick={() => eliminarCampoDeLista(campo.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={14} /></button>
+                                                <div key={campo.id} className="border border-slate-200 bg-slate-50/50 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm hover:border-slate-300 transition-all">
+
+                                                    {/* Izquierda: Indicador Numérico e Inputs de Edición In-Place */}
+                                                    <div className="flex items-center gap-3 w-full sm:w-auto flex-1">
+                                                        <span className="w-6 h-6 bg-slate-200 text-slate-600 font-black text-[10px] rounded-full flex items-center justify-center shrink-0">
+                                                            {index + 1}
+                                                        </span>
+
+                                                        {/* Input para cambiar el nombre/label del campo de inmediato */}
+                                                        <div className="flex-1 sm:max-w-xs">
+                                                            <input
+                                                                type="text"
+                                                                value={campo.label}
+                                                                placeholder="Nombre de la pregunta..."
+                                                                onChange={(e) => modificarCampoExistente(campo.id, { label: e.target.value })}
+                                                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                                                            />
+                                                        </div>
+
+                                                        {/* Selector para cambiar el Tipo de Dato en caliente */}
+                                                        <div>
+                                                            <select
+                                                                value={campo.type}
+                                                                onChange={(e) => modificarCampoExistente(campo.id, { type: e.target.value as any })}
+                                                                className="px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 outline-none focus:ring-2 focus:ring-blue-500 transition-all h-7"
+                                                            >
+                                                                <option value="text">Texto Corto</option>
+                                                                <option value="number">Numérica</option>
+                                                                <option value="date">Fecha</option>
+                                                                <option value="textarea">Párrafo Largo</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Derecha: Check de Requerido y Botón Eliminar */}
+                                                    <div className="flex items-center gap-4 shrink-0 self-end sm:self-auto">
+                                                        <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={campo.required}
+                                                                onChange={(e) => modificarCampoExistente(campo.id, { required: e.target.checked })}
+                                                                className="rounded border-slate-300 text-blue-600 w-3.5 h-3.5"
+                                                            />
+                                                            <span className="text-[11px] font-bold text-slate-500">Requerido</span>
+                                                        </label>
+
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => eliminarCampoDeLista(campo.id)}
+                                                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                        >
+                                                            <Trash2 size={15} />
+                                                        </button>
+                                                    </div>
+
                                                 </div>
                                             ))}
                                         </div>
@@ -426,133 +479,38 @@ export default function AdminDashboard() {
                         </div>
                     )}
 
-                    {/* ─── FASE 3: FORMULARIO DE REGISTRO DE CONSULTORES INTEGRADO (SPA) ─── */}
+                    {/* VISTA 3: REGISTRO DE CONSULTORES */}
                     {vistaActiva === 'registrar-consultor' && (
                         <div className="space-y-5 animate-in fade-in duration-200">
                             <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-                                <div className="w-10 h-10 bg-green-100 text-green-700 rounded-lg flex items-center justify-center">
-                                    <UserPlus size={20} />
-                                </div>
-                                <div>
-                                    <h1 className="text-lg font-black text-slate-900">Registrar Personal de Campo</h1>
-                                    <p className="text-xs text-slate-400">Agrega un nuevo consultor con expediente completo al sistema.</p>
-                                </div>
+                                <div className="w-10 h-10 bg-green-100 text-green-700 rounded-lg flex items-center justify-center"><UserPlus size={20} /></div>
+                                <div><h1 className="text-lg font-black text-slate-900">Registrar Personal de Campo</h1><p className="text-xs text-slate-400">Agrega un nuevo consultor con expediente completo al sistema.</p></div>
                             </div>
-
                             <form onSubmit={handleRegistroConsultor} className="space-y-4">
-                                {errorMsg && (
-                                    <div className="bg-red-50 border-l-4 border-red-500 p-4 flex items-center gap-3 text-red-700 rounded-r-lg text-xs font-medium">
-                                        <AlertCircle size={18} className="shrink-0" /> {errorMsg}
-                                    </div>
-                                )}
-
-                                {successMsg && (
-                                    <div className="bg-green-50 border-l-4 border-green-500 p-4 flex items-center gap-3 text-green-700 rounded-r-lg text-xs font-medium">
-                                        <CheckCircle2 size={18} className="shrink-0" /> {successMsg}
-                                    </div>
-                                )}
-
-                                <div className="space-y-1">
-                                    <label className="block text-xs font-bold text-slate-700">Nombre Completo *</label>
-                                    <input
-                                        type="text" required value={nombreCon} disabled={submitting}
-                                        placeholder="Ej: Juan Pérez Gómez"
-                                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-medium"
-                                        onChange={(e) => setNombreCon(e.target.value)}
-                                    />
-                                </div>
-
+                                {errorMsg && <div className="bg-red-50 border-l-4 border-red-500 p-4 flex items-center gap-3 text-red-700 rounded-r-lg text-xs font-medium"><AlertCircle size={18} className="shrink-0" /> {errorMsg}</div>}
+                                {successMsg && <div className="bg-green-50 border-l-4 border-green-500 p-4 flex items-center gap-3 text-green-700 rounded-r-lg text-xs font-medium"><CheckCircle2 size={18} className="shrink-0" /> {successMsg}</div>}
+                                <div className="space-y-1"><label className="block text-xs font-bold text-slate-700">Nombre Completo *</label><input type="text" required value={nombreCon} disabled={submitting} placeholder="Ej: Juan Pérez Gómez" className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-medium" onChange={(e) => setNombreCon(e.target.value)} /></div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div className="space-y-1">
-                                        <label className="block text-xs font-bold text-slate-700">Correo Electrónico *</label>
-                                        <input
-                                            type="email" required value={emailCon} disabled={submitting}
-                                            placeholder="consultor@empresa.com"
-                                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-medium"
-                                            onChange={(e) => setEmailCon(e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="block text-xs font-bold text-slate-700">Teléfono de Contacto *</label>
-                                        <div className="relative">
-                                            <Phone className="absolute left-3 top-2.5 text-slate-400" size={14} />
-                                            <input
-                                                type="tel" required value={telefonoCon} disabled={submitting}
-                                                placeholder="10 dígitos"
-                                                className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-medium"
-                                                onChange={(e) => setTelefonoCon(e.target.value)}
-                                            />
-                                        </div>
-                                    </div>
+                                    <div className="space-y-1"><label className="block text-xs font-bold text-slate-700">Correo Electrónico *</label><input type="email" required value={emailCon} disabled={submitting} placeholder="consultor@empresa.com" className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-medium" onChange={(e) => setEmailCon(e.target.value)} /></div>
+                                    <div className="space-y-1"><label className="block text-xs font-bold text-slate-700">Teléfono de Contacto *</label><div className="relative"><Phone className="absolute left-3 top-2.5 text-slate-400" size={14} /><input type="tel" required value={telefonoCon} disabled={submitting} placeholder="10 dígitos" className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-medium" onChange={(e) => setTelefonoCon(e.target.value)} /></div></div>
                                 </div>
-
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div className="space-y-1">
-                                        <label className="block text-xs font-bold text-slate-700">Municipio de Asignación *</label>
-                                        <input
-                                            type="text" required value={municipioCon} disabled={submitting}
-                                            placeholder="Ej: Tlaxcoapan"
-                                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-medium"
-                                            onChange={(e) => setMunicipioCon(e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="block text-xs font-bold text-slate-700">CURP (18 caracteres) *</label>
-                                        <input
-                                            type="text" required value={curpCon} disabled={submitting} maxLength={18}
-                                            placeholder="Escribe la CURP..."
-                                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-black uppercase tracking-wider"
-                                            onChange={(e) => setCurpCon(e.target.value)}
-                                        />
-                                    </div>
+                                    <div className="space-y-1"><label className="block text-xs font-bold text-slate-700">Municipio de Asignación *</label><input type="text" required value={municipioCon} disabled={submitting} placeholder="Ej: Tlaxcoapan" className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-medium" onChange={(e) => setMunicipioCon(e.target.value)} /></div>
+                                    <div className="space-y-1"><label className="block text-xs font-bold text-slate-700">CURP (18 caracteres) *</label><input type="text" required value={curpCon} disabled={submitting} maxLength={18} placeholder="Escribe la CURP..." className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-black uppercase tracking-wider" onChange={(e) => setCurpCon(e.target.value)} /></div>
                                 </div>
-
-                                <div className="space-y-1">
-                                    <label className="block text-xs font-bold text-slate-700">Dirección Particular *</label>
-                                    <div className="relative">
-                                        <MapPin className="absolute left-3 top-2.5 text-slate-400" size={14} />
-                                        <input
-                                            type="text" required value={direccionCon} disabled={submitting}
-                                            placeholder="Calle, Número, Colonia, C.P."
-                                            className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-medium"
-                                            onChange={(e) => setDireccionCon(e.target.value)}
-                                        />
-                                    </div>
-                                    <p className="text-[10px] text-slate-400 mt-2 flex items-center gap-1 italic">
-                                        <Shield size={11} /> Al guardar, los primeros 8 caracteres de la CURP funcionarán como su contraseña de acceso provisional.
-                                    </p>
-                                </div>
-
-                                <button
-                                    type="submit" disabled={submitting}
-                                    className="w-full bg-green-600 text-white py-2.5 rounded-xl font-bold hover:bg-green-700 transition-all shadow-md shadow-green-50 disabled:opacity-60 text-xs"
-                                >
-                                    {submitting ? "Procesando Credenciales..." : "Registrar y Activar Cuenta de Campo"}
-                                </button>
+                                <div className="space-y-1"><label className="block text-xs font-bold text-slate-700">Dirección Particular *</label><div className="relative"><MapPin className="absolute left-3 top-2.5 text-slate-400" size={14} /><input type="text" required value={direccionCon} disabled={submitting} placeholder="Calle, Número, Colonia, C.P." className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-medium" onChange={(e) => setDireccionCon(e.target.value)} /></div><p className="text-[10px] text-slate-400 mt-2 flex items-center gap-1 italic"><Shield size={11} /> Al guardar, los primeros 8 caracteres de la CURP funcionarán como su contraseña de acceso provisional.</p></div>
+                                <button type="submit" disabled={submitting} className="w-full bg-green-600 text-white py-2.5 rounded-xl font-bold hover:bg-green-700 transition-all shadow-md shadow-green-50 disabled:opacity-60 text-xs">{submitting ? "Procesando Credenciales..." : "Registrar y Activar Cuenta de Campo"}</button>
                             </form>
                         </div>
                     )}
 
-                    {/* ─── FASE 4: MÓDULO DE MÉTRICAS GLOBALES DEL SISTEMA ─── */}
+                    {/* VISTA 4: METRICAS */}
                     {vistaActiva === 'metricas' && (
                         <div className="space-y-6 animate-in fade-in duration-200">
-                            <div className="border-b border-slate-100 pb-4">
-                                <h1 className="text-lg font-black text-slate-900">Métricas de Rendimiento</h1>
-                                <p className="text-xs text-slate-400">Auditoría del estado del almacenamiento y sincronización de datos de la PWA.</p>
-                            </div>
-
+                            <div className="border-b border-slate-100 pb-4"><h1 className="text-lg font-black text-slate-900">Métricas de Rendimiento</h1><p className="text-xs text-slate-400">Auditoría del estado del almacenamiento y sincronización de datos de la PWA.</p></div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div className="bg-slate-50 border border-slate-100 p-5 rounded-xl">
-                                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Flujo de Campo</span>
-                                    <h3 className="text-3xl font-black text-blue-600 mt-1">{totalEncuestasSincronizadas}</h3>
-                                    <p className="text-xs text-slate-500 mt-1 font-medium">Encuestas respondidas por consultores y sincronizadas con la nube.</p>
-                                </div>
-
-                                <div className="bg-slate-50 border border-slate-100 p-5 rounded-xl">
-                                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Estructura Base</span>
-                                    <h3 className="text-3xl font-black text-slate-800 mt-1">{plantillas.length}</h3>
-                                    <p className="text-xs text-slate-500 mt-1 font-medium">Formatos de formularios dinámicos creados y disponibles globalmente.</p>
-                                </div>
+                                <div className="bg-slate-50 border border-slate-100 p-5 rounded-xl"><span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Flujo de Campo</span><h3 className="text-3xl font-black text-blue-600 mt-1">{totalEncuestasSincronizadas}</h3><p className="text-xs text-slate-500 mt-1 font-medium">Encuestas respondidas por consultores y sincronizadas con la nube.</p></div>
+                                <div className="bg-slate-50 border border-slate-100 p-5 rounded-xl"><span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Estructura Base</span><h3 className="text-3xl font-black text-slate-800 mt-1">{plantillas.length}</h3><p className="text-xs text-slate-500 mt-1 font-medium">Formatos de formularios dinámicos creados y disponibles globalmente.</p></div>
                             </div>
                         </div>
                     )}
