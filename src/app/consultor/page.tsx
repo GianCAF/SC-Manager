@@ -70,7 +70,7 @@ function SelectorFechaDinamico({ required, disabled, onChange }: { required: boo
 }
 
 export default function DashboardConsultor() {
-    const { user, role, logout, loading: authLoading } = useAuth();
+    const { user, role, loading: authLoading } = useAuth();
     const router = useRouter();
 
     const [vistaActiva, setVistaActiva] = useState<'registros' | 'detalle-registro' | 'agendar' | 'llenar'>('registros');
@@ -134,7 +134,6 @@ export default function DashboardConsultor() {
         });
     };
 
-    // 🧠 Extractor determinista y blindado contra desorden de llaves en JavaScript
     const obtenerNombreResumen = (reg: RegistroEncuesta) => {
         const respuestas = reg.respuestas;
         const llaves = Object.keys(respuestas);
@@ -142,7 +141,6 @@ export default function DashboardConsultor() {
         const normalizar = (txt: string) =>
             txt.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[()]/g, "").trim();
 
-        // Estrategia A: Buscar usando la plantilla original vinculada
         const plantillaOriginal = plantillas.find(p => p.id === reg.plantillaId);
         if (plantillaOriginal && plantillaOriginal.campos) {
             const campoNom = plantillaOriginal.campos.find(c => {
@@ -152,7 +150,6 @@ export default function DashboardConsultor() {
             const campoPat = plantillaOriginal.campos.find(c => normalizar(c.label).includes('paterno'));
             const campoMat = plantillaOriginal.campos.find(c => normalizar(c.label).includes('materno'));
 
-            // Intentamos recuperar los datos usando la etiqueta exacta de la plantilla
             if (campoNom) {
                 const nom = respuestas[campoNom.label] || '';
                 const pat = campoPat ? respuestas[campoPat.label] || '' : '';
@@ -162,7 +159,6 @@ export default function DashboardConsultor() {
             }
         }
 
-        // Estrategia B: Búsqueda difusa estricta en las llaves si la plantilla no coincide
         const llaveNombre = llaves.find(k => {
             const l = normalizar(k);
             return l.includes('nombre') && !l.includes('paterno') && !l.includes('materno');
@@ -178,15 +174,28 @@ export default function DashboardConsultor() {
             if (completo) return completo;
         }
 
-        // Fallback C: Si no hay campos de nombre, ordenamos las llaves alfabéticamente para que NUNCA cambie al recargar
         if (llaves.length > 0) {
             const llavesOrdenadas = [...llaves].sort();
-            // Intentamos evadir campos comunes que sabemos que no son el nombre (fechas, curp)
             const llaveFiltro = llavesOrdenadas.find(k => !normalizar(k).includes('fecha') && !normalizar(k).includes('curp')) || llavesOrdenadas[0];
             return String(respuestas[llaveFiltro]);
         }
 
         return "Expediente de Campo";
+    };
+
+    // ⚡ Manejador de cambios en los inputs que fuerza mayúsculas automáticamente si detecta la palabra CURP
+    const handleInputChange = (campoLabel: string, campoId: string, valor: string) => {
+        let valorProcesado = valor;
+
+        // Si la etiqueta contiene "curp" (sin importar mayúsculas/minúsculas), lo forzamos a mayúsculas
+        if (campoLabel.toLowerCase().includes('curp')) {
+            valorProcesado = valor.toUpperCase();
+        }
+
+        setRespuestasForm({
+            ...respuestasForm,
+            [campoId]: valorProcesado
+        });
     };
 
     const handleFormSubmit = async (e: React.FormEvent) => {
@@ -307,7 +316,6 @@ export default function DashboardConsultor() {
                                             onClick={() => { setRegistroSeleccionado(reg); setVistaActiva('detalle-registro'); }}
                                             className="border border-slate-100 hover:border-blue-300 bg-white p-5 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer border-l-4 border-l-blue-600"
                                         >
-                                            {/* ⚡ Contraste Azul Intenso 100% Determinado */}
                                             <h3 className="font-black text-blue-700 text-base tracking-wide uppercase">
                                                 {obtenerNombreResumen(reg)}
                                             </h3>
@@ -421,19 +429,37 @@ export default function DashboardConsultor() {
                                             </label>
 
                                             {campo.type === 'text' && (
-                                                <input type="text" required={campo.required} className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all" onChange={(e) => setRespuestasForm({ ...respuestasForm, [campo.id]: e.target.value })} />
+                                                <input
+                                                    type="text"
+                                                    required={campo.required}
+                                                    value={respuestasForm[campo.id] || ''}
+                                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                                                    onChange={(e) => handleInputChange(campo.label, campo.id, e.target.value)}
+                                                />
                                             )}
 
                                             {campo.type === 'number' && (
-                                                <input type="number" required={campo.required} className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all" onChange={(e) => setRespuestasForm({ ...respuestasForm, [campo.id]: e.target.value })} />
+                                                <input
+                                                    type="number"
+                                                    required={campo.required}
+                                                    value={respuestasForm[campo.id] || ''}
+                                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                                                    onChange={(e) => handleInputChange(campo.label, campo.id, e.target.value)}
+                                                />
                                             )}
 
                                             {campo.type === 'date' && (
-                                                <SelectorFechaDinamico required={campo.required} disabled={submittingForm} onChange={(valor) => setRespuestasForm({ ...respuestasForm, [campo.id]: valor })} />
+                                                <SelectorFechaDinamico required={campo.required} disabled={submittingForm} onChange={(valor) => handleInputChange(campo.label, campo.id, valor)} />
                                             )}
 
                                             {campo.type === 'textarea' && (
-                                                <textarea rows={3} required={campo.required} className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all" onChange={(e) => setRespuestasForm({ ...respuestasForm, [campo.id]: e.target.value })} />
+                                                <textarea
+                                                    rows={3}
+                                                    required={campo.required}
+                                                    value={respuestasForm[campo.id] || ''}
+                                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                                                    onChange={(e) => handleInputChange(campo.label, campo.id, e.target.value)}
+                                                />
                                             )}
                                         </div>
                                     ))}
