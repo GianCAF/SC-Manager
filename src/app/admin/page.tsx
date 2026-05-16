@@ -2,38 +2,78 @@
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { db } from '@/firebase/config';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
-import { FilePlus, Users, Settings, FileText, Calendar, ChevronRight } from 'lucide-react';
+import { collection, onSnapshot, query, orderBy, addDoc, doc, updateDoc, deleteDoc, getDocs } from 'firebase/firestore';
+import {
+    FilePlus, Users, Settings, FileText, Calendar, ChevronRight, UserPlus, Phone, MapPin, Shield,
+    Trash2, Plus, Save, Type, Hash, AlignLeft, Loader2, AlertCircle, CheckCircle2, Eye, LayoutGrid, X, Edit3, BarChart3
+} from 'lucide-react';
+
+interface Campo {
+    id: string;
+    label: string;
+    type: 'text' | 'number' | 'date' | 'textarea';
+    required: boolean;
+}
 
 interface Plantilla {
     id: string;
     titulo: string;
-    campos: any[];
+    descripcion: string;
+    campos: Campo[];
     createdAt: string;
     activo: boolean;
 }
 
 export default function AdminDashboard() {
     const { user, role, loading } = useAuth();
-    const [plantillas, setPlantillas] = useState<Plantilla[]>([]);
-    const [loadingDocs, setLoadingDocs] = useState(true);
     const router = useRouter();
 
-    // 1. Protección de ruta: Si no es admin, fuera.
+    // 🔄 Control de Navegación SPA interna para el contenedor derecho
+    // Valores: 'dashboard' | 'editor' | 'registrar-consultor' | 'metricas'
+    const [vistaActiva, setVistaActiva] = useState<'dashboard' | 'editor' | 'registrar-consultor' | 'metricas'>('dashboard');
+
+    // Estados de datos de Firestore
+    const [plantillas, setPlantillas] = useState<Plantilla[]>([]);
+    const [loadingDocs, setLoadingDocs] = useState(true);
+    const [totalEncuestasSincronizadas, setTotalEncuestasSincronizadas] = useState(0);
+
+    // Estados para el Constructor / Editor de Plantillas
+    const [editandoId, setEditandoId] = useState<string | null>(null);
+    const [titulo, setTitulo] = useState('');
+    const [descripcion, setDescripcion] = useState('');
+    const [campos, setCampos] = useState<Campo[]>([]);
+
+    // Estados para añadir campos individuales
+    const [labelCampo, setLabelCampo] = useState('');
+    const [tipoCampo, setTipoCampo] = useState<'text' | 'number' | 'date' | 'textarea'>('text');
+    const [requeridoCampo, setRequeridoCampo] = useState(true);
+
+    // Estados integrados para el Formulario de Registro de Consultores
+    const [nombreCon, setNombreCon] = useState('');
+    const [emailCon, setEmailCon] = useState('');
+    const [curpCon, setCurpCon] = useState('');
+    const [municipioCon, setMunicipioCon] = useState('');
+    const [telefonoCon, setTelefonoCon] = useState('');
+    const [direccionCon, setDireccionCon] = useState('');
+
+    // Estados de retroalimentación e hilos de carga
+    const [errorMsg, setErrorMsg] = useState('');
+    const [successMsg, setSuccessMsg] = useState('');
+    const [submitting, setSubmitting] = useState(false);
+
+    // 1. 🛡️ Protección de ruta
     useEffect(() => {
         if (!loading && role !== 'admin') {
             router.push('/');
         }
     }, [role, loading, router]);
 
-    // 2. Escuchar las plantillas de formularios en tiempo real
+    // 2. 🔌 Escucha de plantillas y métricas en tiempo real
     useEffect(() => {
         if (role !== 'admin') return;
 
         const q = query(collection(db, "plantillas_formularios"), orderBy("createdAt", "desc"));
-
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const docs: Plantilla[] = [];
             snapshot.forEach((doc) => {
@@ -43,97 +83,482 @@ export default function AdminDashboard() {
             setLoadingDocs(false);
         });
 
+        // Carga inicial de métricas globales de encuestas respondidas
+        const calcularMetricas = async () => {
+            try {
+                const snap = await getDocs(collection(db, "respuestas_formularios"));
+                setTotalEncuestasSincronizadas(snap.size);
+            } catch (err) {
+                console.error("Error al recuperar métricas:", err);
+            }
+        };
+        calcularMetricas();
+
         return () => unsubscribe();
     }, [role]);
+
+    // --- Lógica del Constructor Dinámico ---
+    const agregarCampoALista = () => {
+        if (!labelCampo.trim()) {
+            setErrorMsg("La etiqueta del campo no puede estar vacía.");
+            return;
+        }
+        const nuevoCampo: Campo = {
+            id: Date.now().toString(),
+            label: labelCampo.trim(),
+            type: tipoCampo,
+            required: requeridoCampo
+        };
+        setCampos([...campos, nuevoCampo]);
+        setLabelCampo('');
+        setErrorMsg('');
+    };
+
+    const eliminarCampoDeLista = (id: string) => {
+        setCampos(campos.filter(c => c.id !== id));
+    };
+
+    const abrirEditorPlantilla = (plantilla: Plantilla) => {
+        setEditandoId(plantilla.id);
+        setTitulo(plantilla.titulo);
+        setDescripcion(plantilla.descripcion || '');
+        setCampos(plantilla.campos || []);
+        setErrorMsg('');
+        setVistaActiva('editor');
+    };
+
+    const abrirCreadorNuevo = () => {
+        setEditandoId(null);
+        setTitulo('');
+        setDescripcion('');
+        setCampos([]);
+        setErrorMsg('');
+        setVistaActiva('editor');
+    };
+
+    const handleGuardarPlantilla = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!titulo.trim()) {
+            setErrorMsg("El título es obligatorio.");
+            return;
+        }
+        if (campos.length === 0) {
+            setErrorMsg("Debes agregar al menos un campo al formulario.");
+            return;
+        }
+
+        setSubmitting(true);
+        setErrorMsg('');
+
+        try {
+            const datosPlantilla = {
+                titulo: titulo.trim(),
+                descripcion: descripcion.trim(),
+                campos: campos,
+                activo: true,
+                updatedAt: new Date().toISOString()
+            };
+
+            if (editandoId) {
+                await updateDoc(doc(db, "plantillas_formularios", editandoId), datosPlantilla);
+                setSuccessMsg("¡Estructura de formulario actualizada con éxito!");
+            } else {
+                await addDoc(collection(db, "plantillas_formularios"), {
+                    ...datosPlantilla,
+                    createdAt: new Date().toISOString()
+                });
+                setSuccessMsg("¡Nuevo formato publicado exitosamente!");
+            }
+
+            setTimeout(() => {
+                setSuccessMsg('');
+                setVistaActiva('dashboard');
+            }, 1500);
+
+        } catch (err: any) {
+            setErrorMsg("Error al procesar la operación: " + err.message);
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleEliminarPlantilla = async () => {
+        if (!editandoId) return;
+        const confirmar = window.confirm("¿Estás seguro de eliminar permanentemente esta plantilla?\nEsta acción afectará el renderizado de encuestas históricas.");
+        if (!confirmar) return;
+
+        try {
+            setSubmitting(true);
+            await deleteDoc(doc(db, "plantillas_formularios", editandoId));
+            setSuccessMsg("Plantilla eliminada correctamente.");
+            setTimeout(() => {
+                setSuccessMsg('');
+                setVistaActiva('dashboard');
+            }, 1500);
+        } catch (err: any) {
+            setErrorMsg("No se pudo eliminar: " + err.message);
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    // --- Lógica de Registro de Consultores (Ruta absoluta segura) ---
+    const handleRegistroConsultor = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        if (curpCon.length !== 18) {
+            setErrorMsg("La CURP debe tener exactamente 18 caracteres.");
+            return;
+        }
+
+        setSubmitting(true);
+        setErrorMsg('');
+        setSuccessMsg('');
+
+        try {
+            // 🚀 Usamos la ruta absoluta de la API para blindar fallos de ruteo
+            const response = await fetch('/api/auth/admin/register-consultor/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    nombre: nombreCon,
+                    email: emailCon,
+                    curp: curpCon.toUpperCase(), // Forzado estricto
+                    municipio: municipioCon,
+                    telefono: telefonoCon,
+                    direccion: direccionCon
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || "Error al registrar al consultor");
+            }
+
+            setSuccessMsg(`¡Consultor registrado! Contraseña inicial: ${data.password_generated}`);
+
+            // Limpieza de campos
+            setNombreCon('');
+            setEmailCon('');
+            setCurpCon('');
+            setMunicipioCon('');
+            setTelefonoCon('');
+            setDireccionCon('');
+
+        } catch (err: any) {
+            setErrorMsg(err.message);
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const obtenerIconoTipo = (type: string) => {
+        switch (type) {
+            case 'text': return <Type size={14} className="text-blue-500" />;
+            case 'number': return <Hash size={14} className="text-green-500" />;
+            case 'date': return <Calendar size={14} className="text-amber-500" />;
+            case 'textarea': return <AlignLeft size={14} className="text-purple-500" />;
+            default: return <Type size={14} />;
+        }
+    };
 
     if (loading || loadingDocs) return <div className="p-10 text-center font-semibold text-slate-600">Cargando panel de control...</div>;
 
     return (
-        <div className="p-8 max-w-7xl mx-auto">
-            <header className="mb-8 flex justify-between items-end">
-                <div>
-                    <h1 className="text-3xl font-bold text-slate-900">Panel de Administración</h1>
-                    <p className="text-slate-500">Gestión global de la consultora socioeconómica</p>
+        <div className="min-h-screen bg-slate-50 flex flex-col">
+            {/* HEADER */}
+            <header className="bg-white border-b border-slate-100 px-6 py-4 sticky top-0 z-30 shadow-sm flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 bg-blue-600 text-white rounded-lg flex items-center justify-center font-black text-lg">S</div>
+                    <span className="font-black text-slate-800 tracking-tight text-lg">Socio<span className="text-blue-600 font-medium">Manager</span></span>
                 </div>
-                <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-xl border border-blue-100 text-sm font-medium">
-                    Conexión Segura
+                <div className="text-xs font-bold text-slate-700 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100 flex items-center gap-2">
+                    <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                    Modo Administrador
                 </div>
             </header>
 
-            {/* ACCIONES PRINCIPALES */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-                <Link
-                    href="/admin/formularios/nuevo"
-                    className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-blue-500 hover:shadow-md transition-all block group"
-                >
-                    <div className="w-12 h-12 bg-blue-100 text-blue-700 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                        <FilePlus size={24} />
-                    </div>
-                    <h3 className="text-lg font-bold text-slate-800">Diseñar Formulario</h3>
-                    <p className="text-slate-500 text-sm mt-1">Crea nuevas plantillas dinámicas con preguntas personalizadas y campos de evidencia.</p>
-                </Link>
+            {/* REJILLA SPA CENTRAL */}
+            <div className="flex-1 max-w-7xl w-full mx-auto flex flex-col md:flex-row gap-6 p-4 md:p-6">
 
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                    <Link
-                        href="../admin/consultores/nuevo/"
-                        className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-green-500 hover:shadow-md transition-all block group"
+                {/* MENÚ IZQUIERDO ESTÁTICO UNIFICADO */}
+                <aside className="w-full md:w-64 shrink-0 bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-2 md:sticky md:top-24 h-fit">
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider px-3 mb-3">Módulos</p>
+
+                    <button
+                        onClick={() => { setVistaActiva('dashboard'); setErrorMsg(''); setSuccessMsg(''); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${vistaActiva === 'dashboard' || vistaActiva === 'editor' ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'text-slate-600 hover:bg-slate-50'
+                            }`}
                     >
-                        <div className="w-12 h-12 bg-green-100 text-green-700 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                            <Users size={24} />
+                        <LayoutGrid size={18} />
+                        Formatos Activos
+                    </button>
+
+                    <button
+                        onClick={() => { setVistaActiva('registrar-consultor'); setErrorMsg(''); setSuccessMsg(''); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${vistaActiva === 'registrar-consultor' ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'text-slate-600 hover:bg-slate-50'
+                            }`}
+                    >
+                        <UserPlus size={18} />
+                        Registrar Consultor
+                    </button>
+
+                    {/* 📊 NUEVA PESTAÑA METRICAS EN MENÚ IZQUIERDO */}
+                    <button
+                        onClick={() => { setVistaActiva('metricas'); setErrorMsg(''); setSuccessMsg(''); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${vistaActiva === 'metricas' ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'text-slate-600 hover:bg-slate-50'
+                            }`}
+                    >
+                        <BarChart3 size={18} />
+                        Métricas del Sistema
+                    </button>
+                </aside>
+
+                {/* PANEL DERECHO CON CONTENIDOS FLUIDOS */}
+                <main className="flex-1 bg-white border border-slate-100 rounded-2xl p-6 shadow-sm min-h-[520px]">
+
+                    {/* MENSAJES DE RESPUESTA INTEGRADOS */}
+                    {successMsg && !vistaActiva.includes('registrar') && (
+                        <div className="mb-4 bg-green-50 text-green-800 border border-green-100 p-4 rounded-xl flex items-center gap-2.5 text-xs font-semibold animate-in fade-in">
+                            <CheckCircle2 size={16} className="text-green-600" /> {successMsg}
                         </div>
-                        <h3 className="text-lg font-bold text-slate-800">Registrar Consultor</h3>
-                        <p className="text-slate-500 text-sm mt-1">Da de alta al personal de campo y automatiza sus claves de acceso mediante su CURP.</p>
-                    </Link>
-                </div>
+                    )}
 
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                    <div className="w-12 h-12 bg-purple-100 text-purple-700 rounded-xl flex items-center justify-center mb-4">
-                        <Settings size={24} />
-                    </div>
-                    <h3 className="text-lg font-bold text-slate-800">Métricas del Sistema</h3>
-                    <p className="text-slate-500 text-sm mt-1">Monitorea el avance de las encuestas, sincronización local y uso de almacenamiento en la PWA.</p>
-                </div>
-            </div>
+                    {/* ─── FASE 1: LISTADO DE PLANTILLAS Y ACCESO RÁPIDO ─── */}
+                    {vistaActiva === 'dashboard' && (
+                        <div className="space-y-6 animate-in fade-in duration-200">
+                            <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+                                <div>
+                                    <h1 className="text-2xl font-black text-slate-900">Estructuras de Captura</h1>
+                                    <p className="text-xs text-slate-400 mt-0.5">Diseño y control de cuestionarios para el personal de campo.</p>
+                                </div>
+                                <button
+                                    onClick={abrirCreadorNuevo}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-md shadow-blue-100 flex items-center gap-1.5"
+                                >
+                                    <Plus size={16} /> Diseñar Formulario
+                                </button>
+                            </div>
 
-            {/* SECCIÓN MÁS IMPORTANTE: LISTADO DE FORMULARIOS REALES */}
-            <section>
-                <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-                    <FileText size={22} className="text-blue-600" /> Plantillas de Formularios Activas ({plantillas.length})
-                </h2>
-
-                {plantillas.length === 0 ? (
-                    <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center text-slate-400">
-                        No has creado ninguna plantilla todavía. Da clic arriba en "Diseñar Formulario" para comenzar.
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {plantillas.map((form) => (
-                            <div
-                                key={form.id}
-                                className="bg-white border border-slate-100 p-5 rounded-2xl shadow-sm flex items-center justify-between hover:shadow-md transition-shadow"
-                            >
-                                <div className="flex items-center gap-4">
-                                    <div className="w-10 h-10 bg-slate-100 text-slate-600 rounded-lg flex items-center justify-center font-bold">
-                                        {form.campos ? form.campos.length : 0}
+                            <div className="space-y-3">
+                                {plantillas.length === 0 ? (
+                                    <div className="border-2 border-dashed border-slate-100 text-slate-400 rounded-xl p-8 text-center text-xs font-medium">No has diseñado ninguna plantilla todavía.</div>
+                                ) : (
+                                    <div className="grid grid-cols-1 gap-3">
+                                        {plantillas.map((form) => (
+                                            <div
+                                                key={form.id}
+                                                onClick={() => abrirEditorPlantilla(form)}
+                                                className="border border-slate-100 hover:border-blue-300 bg-white p-4 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer flex items-center justify-between group border-l-4 border-l-blue-600"
+                                            >
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-9 h-9 bg-slate-50 text-slate-600 rounded-lg flex items-center justify-center text-xs font-black group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
+                                                        {form.campos ? form.campos.length : 0}
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="font-bold text-slate-800 group-hover:text-blue-600 text-sm transition-colors">{form.titulo}</h4>
+                                                        <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                                                            <Calendar size={11} /> Publicado el {new Date(form.createdAt).toLocaleDateString()}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <ChevronRight size={18} className="text-slate-300 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all" />
+                                            </div>
+                                        ))}
                                     </div>
-                                    <div>
-                                        <h4 className="font-bold text-slate-800">{form.titulo}</h4>
-                                        <p className="text-xs text-slate-400 flex items-center gap-1 mt-1">
-                                            <Calendar size={12} /> Creado el {new Date(form.createdAt).toLocaleDateString()}
-                                        </p>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ─── FASE 2: CONSTRUCTOR / EDITOR DINÁMICO DE FORMULARIO ─── */}
+                    {vistaActiva === 'editor' && (
+                        <div className="space-y-5 animate-in fade-in duration-200">
+                            {/* Contenido del editor idéntico al anterior */}
+                            <div className="border-b border-slate-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div>
+                                    <span className="text-[10px] font-black uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{editandoId ? "Modo Editor" : "Diseñador"}</span>
+                                    <h2 className="text-lg font-black text-slate-900 mt-1">{editandoId ? `Modificar Formato` : "Nueva Plantilla de Captura"}</h2>
+                                </div>
+                                {editandoId && (
+                                    <button type="button" onClick={handleEliminarPlantilla} disabled={submitting} className="text-xs font-bold text-red-600 hover:bg-red-50 border border-red-100 px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all self-start"><Trash2 size={13} /> Eliminar Formato</button>
+                                )}
+                            </div>
+
+                            {errorMsg && <div className="bg-red-50 text-red-700 p-3 rounded-xl flex items-center gap-2 border border-red-100 text-xs font-medium"><AlertCircle size={16} /> {errorMsg}</div>}
+
+                            <form onSubmit={handleGuardarPlantilla} className="space-y-5">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="space-y-1"><label className="text-xs font-bold text-slate-700">Título del Formulario *</label><input type="text" required value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ej. Censo" className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-blue-600 transition-all font-semibold" /></div>
+                                    <div className="space-y-1"><label className="text-xs font-bold text-slate-700">Descripción / Objetivo</label><input type="text" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Ej. Notas básicas" className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-blue-600 transition-all text-slate-500" /></div>
+                                </div>
+
+                                <div className="border border-dashed border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-3">
+                                    <p className="text-xs font-black text-slate-800 uppercase tracking-tight flex items-center gap-1"><Plus size={14} className="text-blue-600" /> Añadir Pregunta al Formato</p>
+                                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                                        <div className="md:col-span-6 space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase">Pregunta / Etiqueta</label><input type="text" value={labelCampo} onChange={(e) => setLabelCampo(e.target.value)} placeholder="Ej. Nombre(s)" className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium" /></div>
+                                        <div className="md:col-span-3 space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase">Tipo de Respuesta</label><select value={tipoCampo} onChange={(e) => setTipoCampo(e.target.value as any)} className="w-full px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none h-8"><option value="text">Texto Corto</option><option value="number">Numérica</option><option value="date">Fecha (Calendario)</option><option value="textarea">Párrafo Largo</option></select></div>
+                                        <div className="md:col-span-2 flex items-center h-8 justify-start md:justify-center"><label className="flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" checked={requeridoCampo} onChange={(e) => setRequeridoCampo(e.target.checked)} className="rounded border-slate-300 text-blue-600 w-3.5 h-3.5" /><span className="text-xs font-bold text-slate-600">Requerido</span></label></div>
+                                        <div className="md:col-span-1"><button type="button" onClick={agregarCampoALista} className="w-full h-8 bg-blue-600 text-white rounded-lg flex items-center justify-center hover:bg-blue-700 transition-colors shadow"><Plus size={16} /></button></div>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded bg-green-50 text-green-700">
-                                        Activo
-                                    </span>
-                                    <ChevronRight size={18} className="text-slate-400" />
+
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black text-slate-700 uppercase tracking-tight flex items-center gap-1"><Eye size={14} className="text-slate-400" /> Estructura del Formulario ({campos.length})</label>
+                                    {campos.length === 0 ? (<div className="text-center py-6 border border-dashed border-slate-200 rounded-xl text-xs text-slate-400 font-medium">El formato no tiene campos asignados aún.</div>) : (
+                                        <div className="grid grid-cols-1 gap-2 max-h-[180px] overflow-y-auto pr-1">
+                                            {campos.map((campo, index) => (
+                                                <div key={campo.id} className="border border-slate-100 bg-slate-50 rounded-xl px-4 py-2 flex justify-between items-center">
+                                                    <div className="flex items-center gap-3"><span className="w-5 h-5 bg-slate-200 text-slate-600 font-black text-[10px] rounded-full flex items-center justify-center shrink-0">{index + 1}</span><div className="flex items-center gap-2 text-xs font-bold text-slate-800">{obtenerIconoTipo(campo.type)}<span>{campo.label}</span>{campo.required && <span className="text-red-500 font-black">*</span>}</div></div>
+                                                    <button type="button" onClick={() => eliminarCampoDeLista(campo.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={14} /></button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <button type="submit" disabled={submitting} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl text-xs tracking-wide transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50">
+                                    {submitting ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+                                    {editandoId ? "Guardar Modificaciones" : "Compilar Formato"}
+                                </button>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* ─── FASE 3: FORMULARIO DE REGISTRO DE CONSULTORES INTEGRADO (SPA) ─── */}
+                    {vistaActiva === 'registrar-consultor' && (
+                        <div className="space-y-5 animate-in fade-in duration-200">
+                            <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                                <div className="w-10 h-10 bg-green-100 text-green-700 rounded-lg flex items-center justify-center">
+                                    <UserPlus size={20} />
+                                </div>
+                                <div>
+                                    <h1 className="text-lg font-black text-slate-900">Registrar Personal de Campo</h1>
+                                    <p className="text-xs text-slate-400">Agrega un nuevo consultor con expediente completo al sistema.</p>
                                 </div>
                             </div>
-                        ))}
-                    </div>
-                )}
-            </section>
+
+                            <form onSubmit={handleRegistroConsultor} className="space-y-4">
+                                {errorMsg && (
+                                    <div className="bg-red-50 border-l-4 border-red-500 p-4 flex items-center gap-3 text-red-700 rounded-r-lg text-xs font-medium">
+                                        <AlertCircle size={18} className="shrink-0" /> {errorMsg}
+                                    </div>
+                                )}
+
+                                {successMsg && (
+                                    <div className="bg-green-50 border-l-4 border-green-500 p-4 flex items-center gap-3 text-green-700 rounded-r-lg text-xs font-medium">
+                                        <CheckCircle2 size={18} className="shrink-0" /> {successMsg}
+                                    </div>
+                                )}
+
+                                <div className="space-y-1">
+                                    <label className="block text-xs font-bold text-slate-700">Nombre Completo *</label>
+                                    <input
+                                        type="text" required value={nombreCon} disabled={submitting}
+                                        placeholder="Ej: Juan Pérez Gómez"
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-medium"
+                                        onChange={(e) => setNombreCon(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-bold text-slate-700">Correo Electrónico *</label>
+                                        <input
+                                            type="email" required value={emailCon} disabled={submitting}
+                                            placeholder="consultor@empresa.com"
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-medium"
+                                            onChange={(e) => setEmailCon(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-bold text-slate-700">Teléfono de Contacto *</label>
+                                        <div className="relative">
+                                            <Phone className="absolute left-3 top-2.5 text-slate-400" size={14} />
+                                            <input
+                                                type="tel" required value={telefonoCon} disabled={submitting}
+                                                placeholder="10 dígitos"
+                                                className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-medium"
+                                                onChange={(e) => setTelefonoCon(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-bold text-slate-700">Municipio de Asignación *</label>
+                                        <input
+                                            type="text" required value={municipioCon} disabled={submitting}
+                                            placeholder="Ej: Tlaxcoapan"
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-medium"
+                                            onChange={(e) => setMunicipioCon(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="block text-xs font-bold text-slate-700">CURP (18 caracteres) *</label>
+                                        <input
+                                            type="text" required value={curpCon} disabled={submitting} maxLength={18}
+                                            placeholder="Escribe la CURP..."
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-black uppercase tracking-wider"
+                                            onChange={(e) => setCurpCon(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="block text-xs font-bold text-slate-700">Dirección Particular *</label>
+                                    <div className="relative">
+                                        <MapPin className="absolute left-3 top-2.5 text-slate-400" size={14} />
+                                        <input
+                                            type="text" required value={direccionCon} disabled={submitting}
+                                            placeholder="Calle, Número, Colonia, C.P."
+                                            className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white font-medium"
+                                            onChange={(e) => setDireccionCon(e.target.value)}
+                                        />
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 mt-2 flex items-center gap-1 italic">
+                                        <Shield size={11} /> Al guardar, los primeros 8 caracteres de la CURP funcionarán como su contraseña de acceso provisional.
+                                    </p>
+                                </div>
+
+                                <button
+                                    type="submit" disabled={submitting}
+                                    className="w-full bg-green-600 text-white py-2.5 rounded-xl font-bold hover:bg-green-700 transition-all shadow-md shadow-green-50 disabled:opacity-60 text-xs"
+                                >
+                                    {submitting ? "Procesando Credenciales..." : "Registrar y Activar Cuenta de Campo"}
+                                </button>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* ─── FASE 4: MÓDULO DE MÉTRICAS GLOBALES DEL SISTEMA ─── */}
+                    {vistaActiva === 'metricas' && (
+                        <div className="space-y-6 animate-in fade-in duration-200">
+                            <div className="border-b border-slate-100 pb-4">
+                                <h1 className="text-lg font-black text-slate-900">Métricas de Rendimiento</h1>
+                                <p className="text-xs text-slate-400">Auditoría del estado del almacenamiento y sincronización de datos de la PWA.</p>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="bg-slate-50 border border-slate-100 p-5 rounded-xl">
+                                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Flujo de Campo</span>
+                                    <h3 className="text-3xl font-black text-blue-600 mt-1">{totalEncuestasSincronizadas}</h3>
+                                    <p className="text-xs text-slate-500 mt-1 font-medium">Encuestas respondidas por consultores y sincronizadas con la nube.</p>
+                                </div>
+
+                                <div className="bg-slate-50 border border-slate-100 p-5 rounded-xl">
+                                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Estructura Base</span>
+                                    <h3 className="text-3xl font-black text-slate-800 mt-1">{plantillas.length}</h3>
+                                    <p className="text-xs text-slate-500 mt-1 font-medium">Formatos de formularios dinámicos creados y disponibles globalmente.</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                </main>
+            </div>
         </div>
     );
 }
