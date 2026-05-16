@@ -134,21 +134,37 @@ export default function DashboardConsultor() {
     };
 
     // Helper de UX: Extrae dinámicamente el nombre completo guardado en las respuestas
+    // 🧠 Extractor inteligente ajustado al formato: Nombre(s), Apellido Paterno, Apellido Materno
     const obtenerNombreResumen = (respuestas: { [key: string]: any }) => {
         const llaves = Object.keys(respuestas);
-        // Buscamos campos del diseñador que contengan palabras clave de identidad
-        const campoNombre = llaves.find(k => k.toLowerCase().includes('nombre') || k.toLowerCase().includes('completo'));
-        const campoPaterno = llaves.find(k => k.toLowerCase().includes('paterno') || k.toLowerCase().includes('apellido'));
-        const campoMaterno = llaves.find(k => k.toLowerCase().includes('materno'));
 
-        if (campoNombre) {
-            const nom = respuestas[campoNombre] || '';
-            const pat = campoPaterno ? respuestas[campoPaterno] || '' : '';
-            const mat = campoMaterno ? respuestas[campoMaterno] || '' : '';
-            return `${nom} ${pat} ${mat}`.trim() || "Expediente de Campo";
+        // Función para estandarizar el texto (quita acentos, paréntesis y espacios de más)
+        const normalizar = (txt: string) =>
+            txt.toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "") // Quita acentos
+                .replace(/[()]/g, "")           // Quita paréntesis como los de Nombre(s)
+                .trim();
+
+        // Buscamos las llaves reales usando búsquedas difusas normalizadas
+        const llaveNombre = llaves.find(k => {
+            const limpio = normalizar(k);
+            return limpio.includes('nombre') && !limpio.includes('paterno') && !limpio.includes('materno');
+        });
+        const llavePaterno = llaves.find(k => normalizar(k).includes('paterno'));
+        const llaveMaterno = llaves.find(k => normalizar(k).includes('materno'));
+
+        if (llaveNombre) {
+            const nom = respuestas[llaveNombre] || '';
+            const pat = llavePaterno ? respuestas[llavePaterno] || '' : '';
+            const mat = llaveMaterno ? respuestas[llaveMaterno] || '' : '';
+
+            // Unimos y limpiamos espacios dobles si el usuario no metió algún apellido
+            const completo = `${nom} ${pat} ${mat}`.trim().replace(/\s+/g, ' ');
+            if (completo) return completo;
         }
 
-        // Fallback si no tiene campos de nombre: muestra el primer valor guardado
+        // Fallback de seguridad si el formato cambia drásticamente
         if (llaves.length > 0) return String(respuestas[llaves[0]]);
         return "Expediente de Campo";
     };
