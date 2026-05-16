@@ -206,7 +206,7 @@ export default function DashboardConsultor() {
         try {
             const respuestasEstructuradas: { [key: string]: any } = {};
             plantillaSeleccionada?.campos.forEach(campo => {
-                respuestasEstructuredas[campo.label] = respuestasForm[campo.id] || '';
+                respuestasEstructuradas[campo.label] = respuestasForm[campo.id] || '';
             });
 
             await addDoc(collection(db, "respuestas_formularios"), {
