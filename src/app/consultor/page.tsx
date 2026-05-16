@@ -1,16 +1,23 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { db } from '@/firebase/config';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, doc, getDoc } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import { ClipboardList, Calendar, FileText, Loader2, User, Clock, MapPin, X, ChevronRight } from 'lucide-react';
-import Link from 'next/link';
+import { ClipboardList, Calendar, FileText, Loader2, User, Clock, ArrowLeft, ClipboardCheck, AlertCircle } from 'lucide-react';
+
+interface Campo {
+    id: string;
+    label: string;
+    type: 'text' | 'number' | 'date' | 'textarea';
+    required: boolean;
+}
 
 interface Plantilla {
     id: string;
     titulo: string;
     descripcion: string;
+    campos: Campo[];
 }
 
 interface RegistroEncuesta {
@@ -21,180 +28,256 @@ interface RegistroEncuesta {
     respuestas: { [key: string]: any };
 }
 
+// 🧠 Selector de Fecha por Tres Clics Integrado
+function SelectorFechaDinamico({ required, disabled, onChange }: { required: boolean, disabled: boolean, onChange: (val: string) => void }) {
+    const hoy = new Date();
+    const anioActual = hoy.getFullYear();
+
+    const [dia, setDia] = useState('');
+    const [mes, setMes] = useState('');
+    const [anio, setAnio] = useState('');
+
+    const anios = Array.from({ length: anioActual - 1920 + 1 }, (_, i) => anioActual - i);
+    const meses = [
+        { value: '01', label: 'Enero' }, { value: '02', label: 'Febrero' }, { value: '03', label: 'Marzo' },
+        { value: '04', label: 'Abril' }, { value: '05', label: 'Mayo' }, { value: '06', label: 'Junio' },
+        { value: '07', label: 'Julio' }, { value: '08', label: 'Agosto' }, { value: '09', label: 'Septiembre' },
+        { value: '10', label: 'Octubre' }, { value: '11', label: 'Noviembre' }, { value: '12', label: 'Diciembre' }
+    ];
+    const dias = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'));
+
+    useEffect(() => {
+        if (dia && mes && anio) {
+            onChange(`${anio}-${mes}-${dia}`);
+        }
+    }, [dia, mes, anio, onChange]);
+
+    return (
+        <div className="grid grid-cols-3 gap-2 mt-1">
+            {/* Diá, Mes, Año selectores */}
+            <select required={required} disabled={disabled} value={dia} onChange={(e) => setDia(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 outline-none text-sm font-semibold text-slate-700 focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"><option value="">Día</option>{dias.map(d => <option key={d} value={d}>{d}</option>)}</select>
+            <select required={required} disabled={disabled} value={mes} onChange={(e) => setMes(e.target.value)} className="w-full px-2 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 outline-none text-sm font-semibold text-slate-700 focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"><option value="">Mes</option>{meses.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}</select>
+            <select required={required} disabled={disabled} value={anio} onChange={(e) => setAnio(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 outline-none text-sm font-semibold text-slate-700 focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"><option value="">Año</option>{anios.map(a => <option key={a} value={a}>{a}</option>)}</select>
+        </div>
+    );
+}
+
 export default function DashboardConsultor() {
-    const { user, role, loading: authLoading } = useAuth();
+    const { user, role, logout, loading: authLoading } = useAuth();
     const router = useRouter();
 
-    // Estados de navegación interna
-    const [seccionActiva, setSeccionActiva] = useState<'registros' | 'agendar'>('registros');
+    // Estados de navegación interna SPA (Single Page Experience)
+    // Valores: 'registros' | 'detalle-registro' | 'agendar' | 'llenar'
+    const [vistaActiva, setVistaActiva] = useState<'registros' | 'detalle-registro' | 'agendar' | 'llenar'>('registros');
+
     const [registroSeleccionado, setRegistroSeleccionado] = useState<RegistroEncuesta | null>(null);
+    const [plantillaSeleccionada, setPlantillaSeleccionada] = useState<Plantilla | null>(null);
 
     // Estados de datos de Firestore
     const [plantillas, setPlantillas] = useState<Plantilla[]>([]);
     const [registros, setRegistros] = useState<RegistroEncuesta[]>([]);
     const [loadingData, setLoadingData] = useState(true);
 
-    // Redirección de seguridad
+    // Estados para el motor de llenado interno
+    const [respuestasForm, setRespuestasForm] = useState<{ [key: string]: string }>({});
+    const [submittingForm, setSubmittingForm] = useState(false);
+    const [errorForm, setErrorForm] = useState('');
+    const [successForm, setSuccessForm] = useState(false);
+
     useEffect(() => {
         if (!authLoading && role !== 'consultor') {
             router.push('/auth/login');
         }
     }, [role, authLoading, router]);
 
-    // Carga paralela de Formatos y Respuestas del Consultor
-    useEffect(() => {
-        async function cargarDatosDashboard() {
-            if (!user?.uid) return;
-            try {
-                setLoadingData(true);
+    // Función reutilizable para cargar datos de Firestore
+    const cargarDatosDashboard = async () => {
+        if (!user?.uid) return;
+        try {
+            setLoadingData(true);
 
-                // 1. Recuperar formatos disponibles (plantillas)
-                const qPlantillas = collection(db, "plantillas_formularios");
-                const snapPlantillas = await getDocs(qPlantillas);
-                const listaPlantillas = snapPlantillas.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                })) as Plantilla[];
-                setPlantillas(listaPlantillas);
+            const qPlantillas = collection(db, "plantillas_formularios");
+            const snapPlantillas = await getDocs(qPlantillas);
+            const listaPlantillas = snapPlantillas.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            })) as Plantilla[];
+            setPlantillas(listaPlantillas);
 
-                // 2. Recuperar registros completados por este consultor específico
-                const qRegistros = query(
-                    collection(db, "respuestas_formularios"),
-                    where("encuestador.uid", "==", user.uid)
-                );
-                const snapRegistros = await getDocs(qRegistros);
-                const listaRegistros = snapRegistros.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                })) as RegistroEncuesta[];
+            const qRegistros = query(collection(db, "respuestas_formularios"), where("encuestador.uid", "==", user.uid));
+            const snapRegistros = await getDocs(qRegistros);
+            const listaRegistros = snapRegistros.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            })) as RegistroEncuesta[];
 
-                // Ordenamos cronológicamente de más reciente a más antiguo de forma manual
-                listaRegistros.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-                setRegistros(listaRegistros);
+            listaRegistros.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            setRegistros(listaRegistros);
 
-            } catch (err) {
-                console.error("Error al sincronizar el panel del consultor:", err);
-            } finally {
-                setLoadingData(false);
-            }
+        } catch (err) {
+            console.error("Error al sincronizar el panel:", err);
+        } finally {
+            setLoadingData(false);
         }
+    };
 
+    useEffect(() => {
         if (role === 'consultor') cargarDatosDashboard();
     }, [user, role]);
 
-    // Helper para formatear fechas estéticamente
     const formatIdaFecha = (isoString: string) => {
         if (!isoString) return 'Fecha no disponible';
         const d = new Date(isoString);
         return d.toLocaleDateString('es-MX', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
+            day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
         });
+    };
+
+    // Helper de UX: Extrae dinámicamente el nombre completo guardado en las respuestas
+    const obtenerNombreResumen = (respuestas: { [key: string]: any }) => {
+        const llaves = Object.keys(respuestas);
+        // Buscamos campos del diseñador que contengan palabras clave de identidad
+        const campoNombre = llaves.find(k => k.toLowerCase().includes('nombre') || k.toLowerCase().includes('completo'));
+        const campoPaterno = llaves.find(k => k.toLowerCase().includes('paterno') || k.toLowerCase().includes('apellido'));
+        const campoMaterno = llaves.find(k => k.toLowerCase().includes('materno'));
+
+        if (campoNombre) {
+            const nom = respuestas[campoNombre] || '';
+            const pat = campoPaterno ? respuestas[campoPaterno] || '' : '';
+            const mat = campoMaterno ? respuestas[campoMaterno] || '' : '';
+            return `${nom} ${pat} ${mat}`.trim() || "Expediente de Campo";
+        }
+
+        // Fallback si no tiene campos de nombre: muestra el primer valor guardado
+        if (llaves.length > 0) return String(respuestas[llaves[0]]);
+        return "Expediente de Campo";
+    };
+
+    // Manejador del submit del formulario integrado
+    const handleFormSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        const hoyStr = new Date().toISOString().split('T')[0];
+        for (const campo of plantillaSeleccionada?.campos || []) {
+            if (campo.type === 'date' && respuestasForm[campo.id] > hoyStr) {
+                setErrorForm(`La fecha en '${campo.label}' no puede ser posterior al día de hoy.`);
+                return;
+            }
+        }
+
+        setSubmittingForm(true);
+        setErrorForm('');
+
+        try {
+            await addDoc(collection(db, "respuestas_formularios"), {
+                plantillaId: plantillaSeleccionada?.id,
+                formatoTitulo: plantillaSeleccionada?.titulo,
+                respuestas: respuestasForm,
+                encuestador: { uid: user.uid, nombre: user.displayName, email: user.email },
+                createdAt: new Date().toISOString()
+            });
+
+            setSuccessForm(true);
+            setRespuestasForm({});
+
+            // Sincronizamos la lista en segundo plano y volvemos
+            await cargarDatosDashboard();
+
+            setTimeout(() => {
+                setSuccessForm(false);
+                setVistaActiva('registros');
+            }, 1500);
+
+        } catch (err: any) {
+            setErrorForm("No se guardó el registro: " + err.message);
+        } finally {
+            setSubmittingForm(false);
+        }
     };
 
     if (authLoading || loadingData) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-2">
                 <Loader2 className="animate-spin text-blue-600" size={32} />
-                <p className="text-slate-500 text-sm font-semibold">Sincronizando bitácora de campo...</p>
+                <p className="text-slate-500 text-sm font-semibold">Cargando interfaz unificada...</p>
             </div>
         );
     }
 
     return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
-            {/* BARRA SUPERIOR DE PERFIL */}
+            {/* HEADER */}
             <header className="bg-white border-b border-slate-100 px-6 py-4 sticky top-0 z-30 shadow-sm flex justify-between items-center">
                 <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-blue-600 text-white rounded-lg flex items-center justify-center font-black text-lg tracking-wider">S</div>
+                    <div className="w-8 h-8 bg-blue-600 text-white rounded-lg flex items-center justify-center font-black text-lg">S</div>
                     <span className="font-black text-slate-800 tracking-tight text-lg">Socio<span className="text-blue-600 font-medium">Manager</span></span>
                 </div>
-                <div className="flex items-center gap-3 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">
-                    <div className="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center">
-                        <User size={14} className="stroke-[2.5]" />
-                    </div>
-                    <span className="text-xs font-bold text-slate-700">{user?.displayName || 'Consultor Autorizado'}</span>
-                    <span className="bg-blue-600 text-[10px] uppercase tracking-widest text-white px-2 py-0.5 rounded-md font-extrabold">Campo</span>
+                <div className="text-xs font-bold text-slate-700 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100 flex items-center gap-2">
+                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                    {user?.displayName}
                 </div>
             </header>
 
-            {/* CONTENEDOR PRINCIPAL DISPUESTO EN REJILLA */}
+            {/* REJILLA DE TRABAJO */}
             <div className="flex-1 max-w-6xl w-full mx-auto flex flex-col md:flex-row gap-6 p-4 md:p-6">
 
-                {/* MENU LATERAL IZQUIERDO */}
-                <aside className="w-full md:w-64 shrink-0 self-start bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-2 sticky top-24">
-                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider px-3 mb-3">Navegación</p>
+                {/* MENÚ IZQUIERDO ESTÁTICO (SIEMPRE VISIBLE) */}
+                <aside className="w-full md:w-64 shrink-0 bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-2 md:sticky md:top-24 h-fit">
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider px-3 mb-3">Opciones</p>
 
                     <button
-                        onClick={() => setSeccionActiva('registros')}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${seccionActiva === 'registros'
+                        onClick={() => { setVistaActiva('registros'); setErrorForm(''); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${vistaActiva === 'registros' || vistaActiva === 'detalle-registro'
                                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
                                 : 'text-slate-600 hover:bg-slate-50'
                             }`}
                     >
                         <ClipboardList size={18} />
                         Ver Registros
-                        <span className={`ml-auto text-xs px-2 py-0.5 rounded-md font-black ${seccionActiva === 'registros' ? 'bg-blue-700 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                            {registros.length}
-                        </span>
                     </button>
 
                     <button
-                        onClick={() => setSeccionActiva('agendar')}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${seccionActiva === 'agendar'
+                        onClick={() => { setVistaActiva('agendar'); setErrorForm(''); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${vistaActiva === 'agendar' || vistaActiva === 'llenar'
                                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
                                 : 'text-slate-600 hover:bg-slate-50'
                             }`}
                     >
                         <Calendar size={18} />
                         Agendar Encuesta
-                        <span className={`ml-auto text-xs px-2 py-0.5 rounded-md font-black ${seccionActiva === 'agendar' ? 'bg-blue-700 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                            {plantillas.length}
-                        </span>
                     </button>
                 </aside>
 
-                {/* CONTENIDO PRINCIPAL DERECHO */}
-                <main className="flex-1 bg-white border border-slate-100 rounded-2xl p-6 shadow-sm min-h-[400px]">
+                {/* CONTENEDOR DE CONTENIDO DINÁMICO DERECHO */}
+                <main className="flex-1 bg-white border border-slate-100 rounded-2xl p-6 shadow-sm min-h-[450px]">
 
-                    {/* SECCIÓN 1: LISTADO DE REGISTROS YA REALIZADOS */}
-                    {seccionActiva === 'registros' && (
+                    {/* FASE 1: HISTORIAL DE RESÚMENES */}
+                    {vistaActiva === 'registros' && (
                         <div className="space-y-4">
                             <div className="border-b border-slate-100 pb-3">
-                                <h2 className="text-lg font-black text-slate-900">Historial de Registros Levantados</h2>
-                                <p className="text-xs text-slate-400">Listado de cuestionarios recopilados y sincronizados en campo.</p>
+                                <h2 className="text-lg font-black text-slate-900">Historial de Registros</h2>
+                                <p className="text-xs text-slate-400">Selecciona un beneficiario para auditar su expediente completo.</p>
                             </div>
 
                             {registros.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center py-16 text-center border-2 border-dashed border-slate-100 rounded-xl">
-                                    <FileText className="text-slate-300 mb-2" size={40} />
-                                    <p className="text-sm font-bold text-slate-700">No has levantado registros aún</p>
-                                    <p className="text-xs text-slate-400 max-w-xs mt-0.5">Ve a la pestaña "Agendar Encuesta" para iniciar tu captura inicial de datos.</p>
-                                </div>
+                                <div className="text-center py-12 text-slate-400 text-sm">No hay expedientes capturados en tu bitácora.</div>
                             ) : (
                                 <div className="grid grid-cols-1 gap-3">
                                     {registros.map((reg) => (
                                         <div
                                             key={reg.id}
-                                            onClick={() => setRegistroSeleccionado(reg)}
-                                            className="group border border-slate-100 hover:border-blue-200 bg-white p-4 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer flex items-center justify-between"
+                                            onClick={() => { setRegistroSeleccionado(reg); setVistaActiva('detalle-registro'); }}
+                                            className="border border-slate-100 hover:border-blue-200 bg-white p-4 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer"
                                         >
-                                            <div className="space-y-1">
-                                                <h3 className="font-bold text-slate-800 text-sm group-hover:text-blue-600 transition-colors">
-                                                    {reg.formatoTitulo || 'Estudio sin Título'}
-                                                </h3>
-                                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
-                                                    <span className="flex items-center gap-1 font-medium bg-slate-50 px-2 py-0.5 rounded border border-slate-100 text-slate-500">
-                                                        <Clock size={12} className="text-blue-500" />
-                                                        {formatIdaFecha(reg.createdAt)}
-                                                    </span>
-                                                    <span className="text-[11px] font-mono text-slate-300">ID: {reg.id.slice(0, 8)}...</span>
-                                                </div>
-                                            </div>
-                                            <ChevronRight size={18} className="text-slate-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all" />
+                                            {/* ⚡ Resaltado de Nombre en Azul Contraste de Alta UX */}
+                                            <h3 className="font-extrabold text-blue-600 text-base tracking-wide uppercase">
+                                                {obtenerNombreResumen(reg.respuestas)}
+                                            </h3>
+                                            {/* Fecha y actualización debajo */}
+                                            <p className="text-xs text-slate-400 font-medium flex items-center gap-1 mt-1.5">
+                                                <Clock size={12} className="text-slate-300" />
+                                                Realizado el: <span className="text-slate-600 font-semibold">{formatIdaFecha(reg.createdAt)}</span>
+                                            </p>
                                         </div>
                                     ))}
                                 </div>
@@ -202,104 +285,136 @@ export default function DashboardConsultor() {
                         </div>
                     )}
 
-                    {/* SECCIÓN 2: FORMATOS DISPONIBLES PARA AGENDAR/LLENAR */}
-                    {seccionActiva === 'agendar' && (
-                        <div className="space-y-4">
-                            <div className="border-b border-slate-100 pb-3">
-                                <h2 className="text-lg font-black text-slate-900">Formatos Disponibles</h2>
-                                <p className="text-xs text-slate-400">Selecciona el estudio socioeconómico que vas a aplicar en esta visita:</p>
+                    {/* FASE 2: DETALLE DEL REGISTRO EN EL MISMO ESPACIO */}
+                    {vistaActiva === 'detalle-registro' && registroSeleccionado && (
+                        <div className="space-y-5 animate-in fade-in duration-200">
+                            <div className="border-b border-slate-100 pb-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                <div>
+                                    <span className="text-[10px] font-black uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Expediente Completo</span>
+                                    <h2 className="text-xl font-black text-slate-900 mt-1 uppercase text-blue-600 tracking-wide">
+                                        {obtenerNombreResumen(registroSeleccionado.respuestas)}
+                                    </h2>
+                                    <p className="text-xs text-slate-400 mt-0.5">Capturado en: {registroSeleccionado.formatoTitulo}</p>
+                                </div>
+                                {/* ⚡ Botón Cerrar Expediente integrado en el espacio */}
+                                <button
+                                    onClick={() => { setVistaActiva('registros'); setRegistroSeleccionado(null); }}
+                                    className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-md self-start md:self-center"
+                                >
+                                    Cerrar Expediente
+                                </button>
                             </div>
 
-                            {plantillas.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center py-16 text-center border-2 border-dashed border-slate-100 rounded-xl">
-                                    <FileText className="text-slate-300 mb-2" size={40} />
-                                    <p className="text-sm font-bold text-slate-700">No hay formatos asignados</p>
-                                    <p className="text-xs text-slate-400 mt-0.5">Comunícate con el administrador para que te asigne cuestionarios.</p>
+                            <div className="grid grid-cols-1 gap-3.5">
+                                {Object.entries(registroSeleccionado.respuestas).map(([campoId, valor]) => (
+                                    <div key={campoId} className="bg-slate-50 border border-slate-100 p-4 rounded-xl">
+                                        <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider">{campoId}</p>
+                                        <p className="text-sm font-bold text-slate-800 mt-1">
+                                            {typeof valor === 'string' && valor.match(/^\d{4}-\d{2}-\d{2}$/)
+                                                ? valor.split('-').reverse().join('/') // Formato dd/mm/yyyy
+                                                : String(valor)
+                                            }
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* FASE 3: LISTADO DE FORMATOS PARA AGENDAR */}
+                    {vistaActiva === 'agendar' && (
+                        <div className="space-y-4">
+                            <div className="border-b border-slate-100 pb-3">
+                                <h2 className="text-lg font-black text-slate-900">Formatos de Encuesta</h2>
+                                <p className="text-xs text-slate-400">Selecciona un formato para abrir el formulario de captura inmediatamente abajo.</p>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-3">
+                                {plantillas.map((formato) => (
+                                    <div key={formato.id} className="border border-slate-100 rounded-xl p-4 bg-white shadow-sm flex items-center justify-between gap-4">
+                                        <div>
+                                            <h4 className="font-bold text-slate-800 text-sm">{formato.titulo}</h4>
+                                            <p className="text-xs text-slate-400 line-clamp-1 mt-0.5">{formato.descripcion}</p>
+                                        </div>
+                                        <button
+                                            onClick={() => { setPlantillaSeleccionada(formato); setVistaActiva('llenar'); }}
+                                            className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-blue-700 transition-all shadow-md shrink-0"
+                                        >
+                                            Seleccionar
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* FASE 4: FORMULARIO DE CAPTURA EN EL MISMO ESPACIO */}
+                    {vistaActiva === 'llenar' && plantillaSeleccionada && (
+                        <div className="space-y-5 animate-in fade-in duration-200">
+                            <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
+                                <div>
+                                    <span className="text-[10px] font-black uppercase bg-green-100 text-green-700 px-2 py-0.5 rounded">Captura Activa</span>
+                                    <h2 className="text-lg font-black text-slate-900 mt-1">{plantillaSeleccionada.titulo}</h2>
+                                </div>
+                                <button
+                                    onClick={() => { setVistaActiva('agendar'); setErrorForm(''); }}
+                                    className="text-slate-500 hover:text-slate-800 text-xs font-bold flex items-center gap-1"
+                                >
+                                    <ArrowLeft size={14} /> Cambiar Formato
+                                </button>
+                            </div>
+
+                            {successForm ? (
+                                <div className="py-12 text-center space-y-2">
+                                    <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto shadow animate-bounce"><ClipboardCheck size={24} /></div>
+                                    <h3 className="font-black text-slate-900 text-base">¡Guardado Exitosamente!</h3>
+                                    <p className="text-xs text-slate-400">Sincronizando bitácora general...</p>
                                 </div>
                             ) : (
-                                <div className="grid grid-cols-1 gap-4">
-                                    {plantillas.map((formato) => (
-                                        <div key={formato.id} className="border border-slate-100 rounded-xl p-5 bg-white shadow-sm flex flex-col justify-between items-start gap-4 hover:border-slate-200 transition-all">
-                                            <div className="space-y-1">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
-                                                        <FileText size={18} />
-                                                    </div>
-                                                    <h3 className="font-bold text-slate-800 text-sm md:text-base">{formato.titulo}</h3>
-                                                </div>
-                                                <p className="text-xs text-slate-400 leading-relaxed pl-10">{formato.descripcion}</p>
-                                            </div>
-                                            <Link
-                                                href={`/consultor/llenar/${formato.id}`}
-                                                className="w-full text-center bg-blue-600 text-white text-xs font-bold py-2.5 rounded-lg hover:bg-blue-700 transition-all shadow-md shadow-blue-100 tracking-wide block"
-                                            >
-                                                Aplicar Formato Digital
-                                            </Link>
+                                <form onSubmit={handleFormSubmit} className="space-y-4">
+                                    {errorForm && (
+                                        <div className="bg-red-50 text-red-700 p-3 rounded-xl flex items-center gap-2 border border-red-100 text-xs font-medium">
+                                            <AlertCircle size={16} /> {errorForm}
+                                        </div>
+                                    )}
+
+                                    {plantillaSeleccionada.campos.map((campo) => (
+                                        <div key={campo.id} className="bg-slate-50/50 border border-slate-100 p-4 rounded-xl">
+                                            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                                {campo.label} {campo.required && <span className="text-red-500">*</span>}
+                                            </label>
+
+                                            {campo.type === 'text' && (
+                                                <input type="text" required={campo.required} className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all" onChange={(e) => setRespuestasForm({ ...respuestasForm, [campo.id]: e.target.value })} />
+                                            )}
+
+                                            {campo.type === 'number' && (
+                                                <input type="number" required={campo.required} className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all" onChange={(e) => setRespuestasForm({ ...respuestasForm, [campo.id]: e.target.value })} />
+                                            )}
+
+                                            {campo.type === 'date' && (
+                                                <SelectorFechaDinamico required={campo.required} disabled={submittingForm} onChange={(valor) => setRespuestasForm({ ...respuestasForm, [campo.id]: valor })} />
+                                            )}
+
+                                            {campo.type === 'textarea' && (
+                                                <textarea rows={3} required={campo.required} className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all" onChange={(e) => setRespuestasForm({ ...respuestasForm, [campo.id]: e.target.value })} />
+                                            )}
                                         </div>
                                     ))}
-                                </div>
+
+                                    <button
+                                        type="submit" disabled={submittingForm}
+                                        className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl text-xs tracking-wide transition-all shadow-md shadow-green-100 flex items-center justify-center gap-2"
+                                    >
+                                        {submittingForm ? <Loader2 className="animate-spin" size={16} /> : "Guardar y Sincronizar Registro"}
+                                    </button>
+                                </form>
                             )}
                         </div>
                     )}
 
                 </main>
             </div>
-
-            {/* 👁️ MODAL FLOTANTE DE DETALLE COMPLETO DEL REGISTRO */}
-            {registroSeleccionado && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-                    <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl border border-slate-100 animate-scale-up">
-
-                        {/* Header del Modal */}
-                        <div className="p-5 border-b border-slate-100 flex items-start justify-between bg-slate-50/50 rounded-t-2xl">
-                            <div className="space-y-1">
-                                <span className="text-[10px] font-black uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Expediente Capturado</span>
-                                <h3 className="font-bold text-slate-900 text-base leading-tight mt-1">{registroSeleccionado.formatoTitulo}</h3>
-                                <p className="text-[11px] text-slate-400 flex items-center gap-1">
-                                    <Clock size={12} /> Sincronizado el {formatIdaFecha(registroSeleccionado.createdAt)}
-                                </p>
-                            </div>
-                            <button
-                                onClick={() => setRegistroSeleccionado(null)}
-                                className="p-1.5 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"
-                            >
-                                <X size={16} />
-                            </button>
-                        </div>
-
-                        {/* Contenido / Respuestas dinámicas mapeadas */}
-                        <div className="p-5 overflow-y-auto space-y-4 flex-1 bg-white">
-                            {Object.keys(registroSeleccionado.respuestas).length === 0 ? (
-                                <p className="text-xs text-center text-slate-400 py-6">Este registro fue guardado sin campos.</p>
-                            ) : (
-                                Object.entries(registroSeleccionado.respuestas).map(([campoId, valor]) => (
-                                    <div key={campoId} className="bg-slate-50/70 border border-slate-100 p-3 rounded-xl space-y-1">
-                                        <p className="text-[11px] font-black text-slate-400 uppercase tracking-wide">{campoId}</p>
-                                        <p className="text-sm font-bold text-slate-800 break-words">
-                                            {typeof valor === 'string' && valor.match(/^\d{4}-\d{2}-\d{2}$/)
-                                                ? valor.split('-').reverse().join('/') // Formatea visualmente YYYY-MM-DD a DD/MM/YYYY
-                                                : String(valor)
-                                            }
-                                        </p>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-
-                        {/* Footer de cierre */}
-                        <div className="p-4 border-t border-slate-100 bg-slate-50/50 text-center rounded-b-2xl">
-                            <button
-                                onClick={() => setRegistroSeleccionado(null)}
-                                className="w-full bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-md"
-                            >
-                                Cerrar Expediente
-                            </button>
-                        </div>
-
-                    </div>
-                </div>
-            )}
-
         </div>
     );
 }
