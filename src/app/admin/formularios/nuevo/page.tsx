@@ -26,14 +26,12 @@ export default function DiseñadorFormularios() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
-    // 1. 🛡️ Protección de Ruta instantánea con el localStorage optimizado
     if (authLoading) return <div className="p-10 text-center animate-pulse">Cargando constructor...</div>;
     if (role !== 'admin') {
         router.push('/');
         return null;
     }
 
-    // --- Lógica del Diseñador Dinámico ---
     const agregarCampo = () => {
         const nuevoCampo: Campo = {
             id: Date.now().toString(),
@@ -62,7 +60,6 @@ export default function DiseñadorFormularios() {
         setError('');
 
         try {
-            // Guardamos el esquema del formulario global en Firestore
             await addDoc(collection(db, "plantillas_formularios"), {
                 titulo,
                 descripcion,
@@ -72,7 +69,7 @@ export default function DiseñadorFormularios() {
                 activo: true
             });
 
-            router.push('/admin'); // 👈 Regresa al Dashboard principal
+            router.push('/admin');
         } catch (err: any) {
             setError("Error al guardar la plantilla: " + err.message);
         } finally {
@@ -81,7 +78,17 @@ export default function DiseñadorFormularios() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50 pb-20">
+        <div className="min-h-screen bg-slate-50 pb-20 relative">
+
+            {/* ⚡ BOTÓN FLOTANTE INTELIGENTE (Accesibilidad de UX) */}
+            <button
+                onClick={agregarCampo}
+                title="Añadir nueva pregunta"
+                className="fixed bottom-8 right-8 z-50 bg-blue-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-xl hover:bg-blue-700 hover:scale-110 active:scale-95 transition-all group"
+            >
+                <Plus size={28} className="group-hover:rotate-90 transition-transform duration-300" />
+            </button>
+
             {/* HEADER SUPERIOR */}
             <div className="bg-white border-b border-slate-200 sticky top-0 z-20 px-6 py-4 shadow-sm">
                 <div className="max-w-5xl mx-auto flex justify-between items-center">
@@ -102,12 +109,12 @@ export default function DiseñadorFormularios() {
                 </div>
             </div>
 
-            {/* ÁREA DE TRABAJO EN REJILLA */}
+            {/* ÁREA DE TRABAJO */}
             <main className="max-w-5xl mx-auto px-6 mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
 
-                {/* IZQUIERDA: CONFIGURACIÓN GENERAL */}
+                {/* CONFIGURACIÓN GENERAL */}
                 <div className="lg:col-span-1 space-y-6">
-                    <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+                    <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 sticky top-28">
                         <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                             <Layout size={16} /> Identidad del Formato
                         </h3>
@@ -116,7 +123,7 @@ export default function DiseñadorFormularios() {
                                 <label className="block text-sm font-bold text-slate-700 mb-1.5">Título del Formulario</label>
                                 <input
                                     type="text" value={titulo} onChange={(e) => setTitulo(e.target.value)}
-                                    placeholder="Ej: Encuesta de Vulnerabilidad"
+                                    placeholder="Ej: Censo de Vivienda"
                                     className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-medium"
                                 />
                             </div>
@@ -139,18 +146,12 @@ export default function DiseñadorFormularios() {
                     )}
                 </div>
 
-                {/* DERECHA: CONSTRUCTOR DE REACTIVOS */}
+                {/* LISTADO DE REACTIVOS */}
                 <div className="lg:col-span-2 space-y-4">
                     <div className="flex justify-between items-center mb-2">
                         <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
                             <ListChecks size={16} /> Estructura de Reactivos ({campos.length})
                         </h3>
-                        <button
-                            onClick={agregarCampo}
-                            className="text-blue-600 text-sm font-bold flex items-center gap-1.5 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
-                        >
-                            <Plus size={18} /> Añadir Campo
-                        </button>
                     </div>
 
                     {campos.length === 0 ? (
@@ -158,7 +159,7 @@ export default function DiseñadorFormularios() {
                             <div className="w-16 h-16 bg-slate-50 text-slate-300 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <Plus size={32} />
                             </div>
-                            <p className="text-slate-400 font-medium">Haz clic en "Añadir Campo" para empezar a diseñar tu encuesta.</p>
+                            <p className="text-slate-400 font-medium">Usa el botón flotante azul de la esquina inferior derecha para añadir tu primer campo.</p>
                         </div>
                     ) : (
                         <div className="space-y-4">
