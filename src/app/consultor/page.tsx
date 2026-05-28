@@ -4,7 +4,7 @@ import { db } from '@/firebase/config';
 import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import { ClipboardList, Calendar, FileText, Loader2, Clock, ArrowLeft, ClipboardCheck, AlertCircle, Search } from 'lucide-react';
+import { ClipboardList, Calendar, FileText, Loader2, Clock, ArrowLeft, ClipboardCheck, AlertCircle, Search, X } from 'lucide-react';
 
 interface Campo {
     id: string;
@@ -87,6 +87,10 @@ export default function DashboardConsultor() {
     const [submittingForm, setSubmittingForm] = useState(false);
     const [errorForm, setErrorForm] = useState('');
     const [successForm, setSuccessForm] = useState(false);
+
+    // ⚡ ESTADOS PARA LA VENTANA EMERGENTE (TOAST) DINÁMICA
+    const [mostrarToast, setMostrarToast] = useState(false);
+    const [animarToast, setAnimarToast] = useState(false);
 
     useEffect(() => {
         if (!authLoading && role !== 'consultor') {
@@ -193,14 +197,28 @@ export default function DashboardConsultor() {
         setRespuestasForm({ ...respuestasForm, [campoId]: valorProcesado });
     };
 
-    // ⚡ MANEJADOR PRINCIPAL REESTRUCTURADO Y TRANSACCIONAL
+    // ⚡ DISPARADOR DEL TOAST CON MICROANIMACIÓN ELÁSTICA (Pequeño crecimiento y achicamiento)
+    const dispararToastError = (mensaje: string) => {
+        setErrorForm(mensaje);
+        setMostrarToast(true);
+
+        // Micro-animación elástica: escala de golpe y se estabiliza
+        setTimeout(() => setAnimarToast(true), 50);
+
+        // ⏱️ Auto-cierre estricto a los 3 segundos
+        setTimeout(() => {
+            setAnimarToast(false);
+            setTimeout(() => setMostrarToast(false), 200); // Espera que acabe el fade-out
+        }, 3000);
+    };
+
     const handleFormSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
         const hoyStr = new Date().toISOString().split('T')[0];
         for (const campo of plantillaSeleccionada?.campos || []) {
             if (campo.type === 'date' && respuestasForm[campo.id] > hoyStr) {
-                setErrorForm(`La fecha en '${campo.label}' no puede ser posterior al día de hoy.`);
+                dispararToastError(`La fecha en '${campo.label}' no puede ser posterior al día de hoy.`);
                 return;
             }
         }
@@ -209,7 +227,6 @@ export default function DashboardConsultor() {
         setErrorForm('');
 
         try {
-            // 🧠 1. Extraer y mapear inputs del formulario actual
             let emailCliente = '';
             let curpCliente = '';
             let nombreCon = '';
@@ -239,13 +256,11 @@ export default function DashboardConsultor() {
                 }
             });
 
-            // 🛡️ 2. VALIDACIÓN LOCAL PREVENTIVA: Si la CURP viene vacía o incompleta, frenar.
             if (!curpCliente || curpCliente.length !== 18) {
                 throw new Error("La CURP es obligatoria y debe contener exactamente 18 caracteres.");
             }
 
-            // 🔒 3. VERIFICACIÓN DIRECTA EN FIRESTORE (Respuestas previas del formulario)
-            // Esto asegura que si ya existe una encuesta con esta CURP, se cancele antes de tocar nada más.
+            // Validar CURP en Firestore
             const qValidarCurp = query(
                 collection(db, "respuestas_formularios"),
                 where(`respuestas.CURP`, "==", curpCliente)
@@ -253,11 +268,10 @@ export default function DashboardConsultor() {
             const snapValidar = await getDocs(qValidarCurp);
 
             if (!snapValidar.empty) {
-                throw new Error(`Operación rechazada: Ya existe un expediente de campo registrado con la CURP: ${curpCliente}.`);
+                throw new Error(`La CURP "${curpCliente}" ya está registrada en otro expediente.`);
             }
 
-            // 🚀 4. INVOCACIÓN AL BACKEND: Crear usuario de forma remota. 
-            // Si el backend rebota la petición (por CURP o email duplicado), el error se captura en el catch.
+            // Invocación al API Auth del Cliente
             if (emailCliente) {
                 const nombreCompletoCliente = `${nombreCon} ${patCon} ${matCon}`.trim().replace(/\s+/g, ' ') || "Cliente Registrado";
 
@@ -276,13 +290,11 @@ export default function DashboardConsultor() {
                 const data = await response.json();
 
                 if (!response.ok) {
-                    // Si el servidor falla (ej: CURP ya registrada en la colección usuarios), lanzamos el error del backend
-                    throw new Error(data.error || "No se pudo completar el registro del cliente.");
+                    throw new Error(data.error || "Error de validación en la base de datos.");
                 }
             }
 
-            // 📝 5. COMPROMISO FINAL: Solo si las validaciones previas pasaron al 100%,
-            // guardamos las respuestas del formato en Firestore.
+            // Guardar respuestas si todo es válido
             const respuestasEstructuradas: { [key: string]: any } = {};
             plantillaSeleccionada?.campos.forEach(campo => {
                 respuestasEstructuradas[campo.label] = (campo.label.toUpperCase() === 'CURP')
@@ -308,8 +320,8 @@ export default function DashboardConsultor() {
             }, 1500);
 
         } catch (err: any) {
-            // Pintar la alerta roja arriba en el formulario del consultor y mantener los datos intactos
-            setErrorForm(err.message);
+            // ⚡ Dispara la ventana emergente elástica en lugar de pintar el banner viejo
+            dispararToastError(err.message);
         } finally {
             setSubmittingForm(false);
         }
@@ -331,7 +343,30 @@ export default function DashboardConsultor() {
     }
 
     return (
-        <div className="min-h-screen bg-slate-50 flex flex-col">
+        <div className="min-h-screen bg-slate-50 flex flex-col relative overflow-x-hidden">
+
+            {/* ─── VENTANA EMERGENTE (TOAST DE ERROR ROJO) CON MICROANIMACIÓN ─── */}
+            {mostrarToast && (
+                <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4 pointer-events-auto">
+                    <div className={`bg-red-600 border border-red-700 text-white p-4 rounded-2xl shadow-2xl flex items-start gap-3 transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] transform ${animarToast
+                            ? 'translate-y-0 opacity-100 scale-100'
+                            : '-translate-y-4 opacity-0 scale-95'
+                        }`}>
+                        <AlertCircle size={20} className="shrink-0 mt-0.5 animate-pulse text-red-100" />
+                        <div className="flex-1">
+                            <p className="text-xs font-black uppercase tracking-wider text-red-200">Alerta de Registro</p>
+                            <p className="text-xs font-bold mt-0.5 leading-relaxed">{errorForm}</p>
+                        </div>
+                        <button
+                            onClick={() => { setAnimarToast(false); setTimeout(() => setMostrarToast(false), 200); }}
+                            className="p-1 hover:bg-red-700/60 rounded-lg transition-colors text-red-200 hover:text-white"
+                        >
+                            <X size={14} />
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* HEADER */}
             <header className="bg-white border-b border-slate-100 px-6 py-4 sticky top-0 z-30 shadow-sm flex justify-between items-center">
                 <div className="flex items-center gap-2">
@@ -512,12 +547,6 @@ export default function DashboardConsultor() {
                                 </div>
                             ) : (
                                 <form onSubmit={handleFormSubmit} className="space-y-4">
-                                    {errorForm && (
-                                        <div className="bg-red-50 text-red-700 p-3 rounded-xl flex items-center gap-2 border border-red-100 text-xs font-medium">
-                                            <AlertCircle size={16} /> {errorForm}
-                                        </div>
-                                    )}
-
                                     {plantillaSeleccionada.campos.map((campo) => (
                                         <div key={campo.id} className="bg-slate-50/50 border border-slate-100 p-4 rounded-xl">
                                             <label className="block text-xs font-bold text-slate-700 mb-1.5">
