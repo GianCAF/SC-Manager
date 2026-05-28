@@ -1,10 +1,10 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { db } from '@/firebase/config';
-import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import { ClipboardList, Calendar, FileText, Loader2, Clock, ArrowLeft, ClipboardCheck, AlertCircle, Search, X } from 'lucide-react';
+import { ClipboardList, Calendar, FileText, Loader2, Clock, ArrowLeft, ClipboardCheck, AlertCircle, Search, X, Edit2, Save } from 'lucide-react';
 
 interface Campo {
     id: string;
@@ -28,13 +28,12 @@ interface RegistroEncuesta {
     respuestas: { [key: string]: any };
 }
 
-function SelectorFechaDinamico({ required, disabled, onChange }: { required: boolean, disabled: boolean, onChange: (val: string) => void }) {
+function SelectorFechaDinamico({ required, disabled, value, onChange }: { required: boolean, disabled: boolean, value?: string, onChange: (val: string) => void }) {
     const hoy = new Date();
     const anioActual = hoy.getFullYear();
 
-    const [dia, setDia] = useState('');
-    const [mes, setMes] = useState('');
-    const [anio, setAnio] = useState('');
+    // Si viene un valor previo (YYYY-MM-DD), extraer las partes para los selectores
+    const [anio, mes, dia] = value ? value.split('-') : ['', '', ''];
 
     const anios = Array.from({ length: anioActual - 1920 + 1 }, (_, i) => anioActual - i);
     const meses = [
@@ -45,26 +44,11 @@ function SelectorFechaDinamico({ required, disabled, onChange }: { required: boo
     ];
     const dias = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'));
 
-    const handleDiaChange = (v: string) => {
-        setDia(v);
-        if (v && mes && anio) onChange(`${anio}-${mes}-${v}`);
-    };
-
-    const handleMesChange = (v: string) => {
-        setMes(v);
-        if (dia && v && anio) onChange(`${anio}-${v}-${dia}`);
-    };
-
-    const handleAnioChange = (v: string) => {
-        setAnio(v);
-        if (dia && mes && v) onChange(`${v}-${mes}-${dia}`);
-    };
-
     return (
         <div className="grid grid-cols-3 gap-2 mt-1">
-            <select required={required} disabled={disabled} value={dia} onChange={(e) => handleDiaChange(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all"><option value="">Día</option>{dias.map(d => <option key={d} value={d}>{d}</option>)}</select>
-            <select required={required} disabled={disabled} value={mes} onChange={(e) => handleMesChange(e.target.value)} className="w-full px-2 py-2.5 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all"><option value="">Mes</option>{meses.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}</select>
-            <select required={required} disabled={disabled} value={anio} onChange={(e) => handleAnioChange(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all"><option value="">Año</option>{anios.map(a => <option key={a} value={a}>{a}</option>)}</select>
+            <select required={required} disabled={disabled} value={dia} onChange={(e) => onChange(`${anio || anioActual}-${mes || '01'}-${e.target.value}`)} className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all"><option value="">Día</option>{dias.map(d => <option key={d} value={d}>{d}</option>)}</select>
+            <select required={required} disabled={disabled} value={mes} onChange={(e) => onChange(`${anio || anioActual}-${e.target.value}-${dia || '01'}`)} className="w-full px-2 py-2.5 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all"><option value="">Mes</option>{meses.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}</select>
+            <select required={required} disabled={disabled} value={anio} onChange={(e) => onChange(`${e.target.value}-${mes || '01'}-${dia || '01'}`)} className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all"><option value="">Año</option>{anios.map(a => <option key={a} value={a}>{a}</option>)}</select>
         </div>
     );
 }
@@ -91,6 +75,10 @@ export default function DashboardConsultor() {
     const [mostrarToast, setMostrarToast] = useState(false);
     const [animarToast, setAnimarToast] = useState(false);
 
+    // ⚡ ESTADOS PARA LA EDICIÓN DINÁMICA DE EXPEDIENTES EXISTENTES
+    const [editandoExpediente, setEditandoExpediente] = useState(false);
+    const [respuestasEditadas, setRespuestasEditadas] = useState<{ [key: string]: any }>({});
+
     useEffect(() => {
         if (!authLoading && role !== 'consultor') {
             router.push('/auth/login');
@@ -102,7 +90,6 @@ export default function DashboardConsultor() {
         try {
             setLoadingData(true);
 
-            // Cargar las plantillas de los formularios
             const qPlantillas = collection(db, "plantillas_formularios");
             const snapPlantillas = await getDocs(qPlantillas);
             const listaPlantillas = snapPlantillas.docs.map(doc => ({
@@ -111,7 +98,6 @@ export default function DashboardConsultor() {
             })) as Plantilla[];
             setPlantillas(listaPlantillas);
 
-            // ⚡ SE LIBERA LA CONSULTA: Se eliminó el filtro where() para permitir visibilidad compartida de expedientes
             const qRegistros = collection(db, "respuestas_formularios");
             const snapRegistros = await getDocs(qRegistros);
             const listaRegistros = snapRegistros.docs.map(doc => ({
@@ -281,12 +267,6 @@ export default function DashboardConsultor() {
                         consultorId: user.uid
                     })
                 });
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.error || "Error de validación en la base de datos.");
-                }
             }
 
             const respuestasEstructuradas: { [key: string]: any } = {};
@@ -315,6 +295,47 @@ export default function DashboardConsultor() {
 
         } catch (err: any) {
             dispararToastError(err.message);
+        } {
+            setSubmittingForm(false);
+        }
+    };
+
+    // ⚡ CONTROLADOR PARA ACTUALIZAR EL EXPEDIENTE EDITADO EN FIRESTORE
+    const handleActualizarExpediente = async () => {
+        if (!registroSeleccionado?.id) return;
+        setSubmittingForm(true);
+        setErrorForm('');
+
+        try {
+            // Forzar mayúsculas en la CURP si se editó
+            const respuestasLimpias = { ...respuestasEditadas };
+            Object.keys(respuestasLimpias).forEach(key => {
+                if (key.toLowerCase().includes('curp') && typeof respuestasLimpias[key] === 'string') {
+                    respuestasLimpias[key] = respuestasLimpias[key].toUpperCase();
+                }
+            });
+
+            const docRef = doc(db, "respuestas_formularios", registroSeleccionado.id);
+            await updateDoc(docRef, {
+                respuestas: respuestasLimpias,
+                modificadoAt: new Date().toISOString()
+            });
+
+            // Refrescar el estado local
+            const registroActualizado = {
+                ...registroSeleccionado,
+                respuestas: respuestasLimpias
+            };
+
+            setRegistroSeleccionado(registroActualizado);
+            setEditandoExpediente(false);
+            setSuccessForm(true);
+            await cargarDatosDashboard();
+
+            setTimeout(() => setSuccessForm(false), 1500);
+
+        } catch (err: any) {
+            dispararToastError("No se pudieron guardar los cambios: " + err.message);
         } finally {
             setSubmittingForm(false);
         }
@@ -341,18 +362,10 @@ export default function DashboardConsultor() {
             {/* TOAST DE ERROR */}
             {mostrarToast && (
                 <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4 pointer-events-auto">
-                    <div className={`bg-red-600 border border-red-700 text-white p-4 rounded-2xl shadow-2xl flex items-start gap-3 transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] transform ${animarToast
-                        ? 'translate-y-0 opacity-100 scale-100'
-                        : '-translate-y-4 opacity-0 scale-95'
-                        }`}>
+                    <div className={`bg-red-600 border border-red-700 text-white p-4 rounded-2xl shadow-2xl flex items-start gap-3 transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] transform ${animarToast ? 'translate-y-0 opacity-100 scale-100' : '-translate-y-4 opacity-0 scale-95'}`}>
                         <AlertCircle size={20} className="shrink-0 mt-0.5 animate-pulse text-red-100" />
-                        <div className="flex-1">
-                            <p className="text-xs font-black uppercase tracking-wider text-red-200">Alerta de Registro</p>
-                            <p className="text-xs font-bold mt-0.5 leading-relaxed">{errorForm}</p>
-                        </div>
-                        <button onClick={() => { setAnimarToast(false); setTimeout(() => setMostrarToast(false), 200); }} className="p-1 hover:bg-red-700/60 rounded-lg transition-colors text-red-200 hover:text-white">
-                            <X size={14} />
-                        </button>
+                        <div className="flex-1"><p className="text-xs font-black uppercase tracking-wider text-red-200">Alerta de Registro</p><p className="text-xs font-bold mt-0.5 leading-relaxed">{errorForm}</p></div>
+                        <button onClick={() => { setAnimarToast(false); setTimeout(() => setMostrarToast(false), 200); }} className="p-1 hover:bg-red-700/60 rounded-lg transition-colors text-red-200 hover:text-white"><X size={14} /></button>
                     </div>
                 </div>
             )}
@@ -375,8 +388,8 @@ export default function DashboardConsultor() {
                 {/* MENÚ IZQUIERDO */}
                 <aside className="w-full md:w-64 shrink-0 bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-2 md:sticky md:top-24 h-fit">
                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider px-3 mb-3">Opciones</p>
-                    <button onClick={() => { setVistaActiva('registros'); setErrorForm(''); setFiltroBusqueda(''); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${vistaActiva === 'registros' || vistaActiva === 'detalle-registro' ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'text-slate-600 hover:bg-slate-50'}`}><ClipboardList size={18} />Ver Registros</button>
-                    <button onClick={() => { setVistaActiva('agendar'); setErrorForm(''); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${vistaActiva === 'agendar' || vistaActiva === 'llenar' ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'text-slate-600 hover:bg-slate-50'}`}><Calendar size={18} />Agendar Encuesta</button>
+                    <button onClick={() => { setVistaActiva('registros'); setErrorForm(''); setFiltroBusqueda(''); setEditandoExpediente(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${vistaActiva === 'registros' || (vistaActiva === 'detalle-registro' && !editandoExpediente) ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'text-slate-600 hover:bg-slate-50'}`}><ClipboardList size={18} />Ver Registros</button>
+                    <button onClick={() => { setVistaActiva('agendar'); setErrorForm(''); setEditandoExpediente(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${vistaActiva === 'agendar' || vistaActiva === 'llenar' ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'text-slate-600 hover:bg-slate-50'}`}><Calendar size={18} />Agendar Encuesta</button>
                 </aside>
 
                 {/* PANEL DERECHO */}
@@ -389,24 +402,16 @@ export default function DashboardConsultor() {
                                 <h2 className="text-lg font-black text-slate-900">Historial de Registros</h2>
                                 <p className="text-xs text-slate-400">Selecciona un beneficiario para auditar su expediente completo.</p>
                             </div>
-
                             {registros.length > 0 && (
                                 <div className="relative w-full mb-4">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                                        <Search size={16} />
-                                    </div>
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400"><Search size={16} /></div>
                                     <input type="text" value={filtroBusqueda} onChange={(e) => setFiltroBusqueda(e.target.value)} placeholder="Busca por nombre y/o apellidos" className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-inner" />
                                 </div>
                             )}
-
-                            {registros.length === 0 ? (
-                                <div className="text-center py-12 text-slate-400 text-sm">No hay expedientes capturados en tu bitácora.</div>
-                            ) : registrosFiltrados.length === 0 ? (
-                                <div className="text-center py-12 text-slate-400 text-sm">No se encontraron coincidencias para "{filtroBusqueda}".</div>
-                            ) : (
+                            {registros.length === 0 ? (<div className="text-center py-12 text-slate-400 text-sm">No hay expedientes capturados en tu bitácora.</div>) : registrosFiltrados.length === 0 ? (<div className="text-center py-12 text-slate-400 text-sm">No se encontraron coincidencias para "{filtroBusqueda}".</div>) : (
                                 <div className="grid grid-cols-1 gap-3">
                                     {registrosFiltrados.map((reg) => (
-                                        <div key={reg.id} onClick={() => { setRegistroSeleccionado(reg); setVistaActiva('detalle-registro'); }} className="border border-slate-100 hover:border-blue-300 bg-white p-5 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer border-l-4 border-l-blue-600 animate-in fade-in duration-150">
+                                        <div key={reg.id} onClick={() => { setRegistroSeleccionado(reg); setVistaActiva('detalle-registro'); setEditandoExpediente(false); }} className="border border-slate-100 hover:border-blue-300 bg-white p-5 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer border-l-4 border-l-blue-600 animate-in fade-in duration-150">
                                             <h3 className="font-black text-blue-700 text-base tracking-wide uppercase">{obtenerNombreResumen(reg)}</h3>
                                             <p className="text-xs text-slate-400 font-medium flex items-center gap-1 mt-2"><Clock size={12} className="text-slate-300" />Realizado el: <span className="text-slate-600 font-semibold">{formatIdaFecha(reg.createdAt)}</span></p>
                                         </div>
@@ -416,57 +421,121 @@ export default function DashboardConsultor() {
                         </div>
                     )}
 
-                    {/* DETALLE DEL REGISTRO ORDENADO SEGÚN EL FORMULARIO ORIGINAL */}
+                    {/* DETALLE Y EDICIÓN DEL REGISTRO DINÁMICO */}
                     {vistaActiva === 'detalle-registro' && registroSeleccionado && (
                         <div className="space-y-5 animate-in fade-in duration-200">
                             <div className="border-b border-slate-100 pb-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
                                 <div>
-                                    <span className="text-[10px] font-black uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Expediente Completo</span>
+                                    <span className="text-[10px] font-black uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                                        {editandoExpediente ? "Modo Edición Activo" : "Expediente Completo"}
+                                    </span>
                                     <h2 className="text-xl font-black text-blue-700 mt-1 uppercase tracking-wide">
                                         {obtenerNombreResumen(registroSeleccionado)}
                                     </h2>
                                     <p className="text-xs text-slate-400 mt-0.5">Capturado en: {registroSeleccionado.formatoTitulo}</p>
                                 </div>
-                                <button
-                                    onClick={() => { setVistaActiva('registros'); setRegistroSeleccionado(null); }}
-                                    className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-md self-start md:self-center"
-                                >
-                                    Cerrar Expediente
-                                </button>
+
+                                <div className="flex items-center gap-2 self-start md:self-center">
+                                    {editandoExpediente ? (
+                                        <>
+                                            <button
+                                                onClick={handleActualizarExpediente} disabled={submittingForm}
+                                                className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-1.5"
+                                            >
+                                                {submittingForm ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
+                                                Guardar Cambios
+                                            </button>
+                                            <button
+                                                onClick={() => setEditandoExpediente(false)}
+                                                className="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold px-4 py-2.5 rounded-xl transition-all"
+                                            >
+                                                Cancelar
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <button
+                                                onClick={() => {
+                                                    setRespuestasEditadas(registroSeleccionado.respuestas);
+                                                    setEditandoExpediente(true);
+                                                }}
+                                                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-1.5"
+                                            >
+                                                <Edit2 size={14} />
+                                                Editar Expediente
+                                            </button>
+                                            <button
+                                                onClick={() => { setVistaActiva('registros'); setRegistroSeleccionado(null); }}
+                                                className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all"
+                                            >
+                                                Cerrar
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
                             </div>
 
+                            {/* FEEDBACK ÉXITO LOCAL EN EDICIÓN */}
+                            {successForm && (
+                                <div className="bg-green-50 text-green-700 border border-green-100 p-3 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                                    <ClipboardCheck size={16} /> ¡Expediente actualizado y sincronizado correctamente!
+                                </div>
+                            )}
+
+                            {/* CAPA DE CAMPOS SECUENCIALES */}
                             <div className="grid grid-cols-1 gap-3.5">
                                 {(() => {
                                     const plantillaAsociada = plantillas.find(p => p.id === registroSeleccionado.plantillaId);
 
                                     if (plantillaAsociada && plantillaAsociada.campos && plantillaAsociada.campos.length > 0) {
                                         return plantillaAsociada.campos.map((campo) => {
-                                            const valorRespuesta = registroSeleccionado.respuestas[campo.label];
-                                            const valorFormateado = valorRespuesta !== undefined && valorRespuesta !== null ? String(valorRespuesta) : '—';
+                                            const valorRespuesta = editandoExpediente
+                                                ? respuestasEditadas[campo.label]
+                                                : registroSeleccionado.respuestas[campo.label];
+
+                                            const valorString = valorRespuesta !== undefined && valorRespuesta !== null ? String(valorRespuesta) : '';
 
                                             return (
                                                 <div key={campo.id} className="bg-slate-50 border border-slate-100 p-4 rounded-xl">
-                                                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider">{campo.label}</p>
-                                                    <p className="text-sm font-bold text-slate-800 mt-1">
-                                                        {campo.type === 'date' && valorFormateado.match(/^\d{4}-\d{2}-\d{2}$/)
-                                                            ? valorFormateado.split('-').reverse().join('/')
-                                                            : valorFormateado
-                                                        }
-                                                    </p>
+                                                    <label className="block text-[11px] font-black text-slate-400 uppercase tracking-wider mb-1">
+                                                        {campo.label} {campo.required && editandoExpediente && <span className="text-red-500">*</span>}
+                                                    </label>
+
+                                                    {editandoExpediente ? (
+                                                        /* ─── COMPONENTES EN MODO EDICIÓN ACTIVA ─── */
+                                                        <>
+                                                            {campo.type === 'text' && (
+                                                                <input type="text" value={valorString} className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500" onChange={(e) => setRespuestasEditadas({ ...respuestasEditadas, [campo.label]: e.target.value })} />
+                                                            )}
+                                                            {campo.type === 'number' && (
+                                                                <input type="number" value={valorString} className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500" onChange={(e) => setRespuestasEditadas({ ...respuestasEditadas, [campo.label]: e.target.value })} />
+                                                            )}
+                                                            {campo.type === 'date' && (
+                                                                <SelectorFechaDinamico required={campo.required} disabled={submittingForm} value={valorString} onChange={(valor) => setRespuestasEditadas({ ...respuestasEditadas, [campo.label]: valor })} />
+                                                            )}
+                                                            {campo.type === 'textarea' && (
+                                                                <textarea rows={3} value={valorString} className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500" onChange={(e) => setRespuestasEditadas({ ...respuestasEditadas, [campo.label]: e.target.value })} />
+                                                            )}
+                                                        </>
+                                                    ) : (
+                                                        /* ─── VISTA ESTÁTICA TRADICIONAL ─── */
+                                                        <p className="text-sm font-bold text-slate-800 mt-1">
+                                                            {campo.type === 'date' && valorString.match(/^\d{4}-\d{2}-\d{2}$/)
+                                                                ? valorString.split('-').reverse().join('/')
+                                                                : valorString || '—'
+                                                            }
+                                                        </p>
+                                                    )}
                                                 </div>
                                             );
                                         });
                                     }
 
+                                    // Fallback seguro por si no hay plantilla
                                     return Object.entries(registroSeleccionado.respuestas).map(([labelPregunta, valor]) => (
                                         <div key={labelPregunta} className="bg-slate-50 border border-slate-100 p-4 rounded-xl">
                                             <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider">{labelPregunta}</p>
-                                            <p className="text-sm font-bold text-slate-800 mt-1">
-                                                {typeof valor === 'string' && valor.match(/^\d{4}-\d{2}-\d{2}$/)
-                                                    ? valor.split('-').reverse().join('/')
-                                                    : String(valor)
-                                                }
-                                            </p>
+                                            <p className="text-sm font-bold text-slate-800 mt-1">{String(valor) || '—'}</p>
                                         </div>
                                     ));
                                 })()}
@@ -477,17 +546,11 @@ export default function DashboardConsultor() {
                     {/* LISTADO DE FORMATOS */}
                     {vistaActiva === 'agendar' && (
                         <div className="space-y-4">
-                            <div className="border-b border-slate-100 pb-3">
-                                <h2 className="text-lg font-black text-slate-900">Formatos de Encuesta</h2>
-                                <p className="text-xs text-slate-400">Selecciona un formato para abrir el formulario de captura inmediatamente abajo.</p>
-                            </div>
+                            <div className="border-b border-slate-100 pb-3"><h2 className="text-lg font-black text-slate-900">Formatos de Encuesta</h2><p className="text-xs text-slate-400">Selecciona un formato para abrir el formulario de captura inmediatamente abajo.</p></div>
                             <div className="grid grid-cols-1 gap-3">
                                 {plantillas.map((formato) => (
                                     <div key={formato.id} className="border border-slate-100 rounded-xl p-4 bg-white shadow-sm flex items-center justify-between gap-4">
-                                        <div>
-                                            <h4 className="font-bold text-slate-800 text-sm">{formato.titulo}</h4>
-                                            <p className="text-xs text-slate-400 line-clamp-1 mt-0.5">{formato.descripcion}</p>
-                                        </div>
+                                        <div><h4 className="font-bold text-slate-800 text-sm">{formato.titulo}</h4><p className="text-xs text-slate-400 line-clamp-1 mt-0.5">{formato.descripcion}</p></div>
                                         <button onClick={() => { setPlantillaSeleccionada(formato); setVistaActiva('llenar'); }} className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-blue-700 transition-all shadow-md shrink-0">Seleccionar</button>
                                     </div>
                                 ))}
@@ -495,17 +558,13 @@ export default function DashboardConsultor() {
                         </div>
                     )}
 
-                    {/* FORMULARIO DE CAPTURA */}
+                    {/* FORMULARIO DE CAPTURA NUEVA */}
                     {vistaActiva === 'llenar' && plantillaSeleccionada && (
                         <div className="space-y-5 animate-in fade-in duration-200">
                             <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-                                <div>
-                                    <span className="text-[10px] font-black uppercase bg-green-100 text-green-700 px-2 py-0.5 rounded">Captura Activa</span>
-                                    <h2 className="text-lg font-black text-slate-900 mt-1">{plantillaSeleccionada.titulo}</h2>
-                                </div>
+                                <div><span className="text-[10px] font-black uppercase bg-green-100 text-green-700 px-2 py-0.5 rounded">Captura Activa</span><h2 className="text-lg font-black text-slate-900 mt-1">{plantillaSeleccionada.titulo}</h2></div>
                                 <button onClick={() => { setVistaActiva('agendar'); setErrorForm(''); }} className="text-slate-500 hover:text-slate-800 text-xs font-bold flex items-center gap-1"><ArrowLeft size={14} /> Cambiar Formato</button>
                             </div>
-
                             {successForm ? (
                                 <div className="py-12 text-center space-y-2">
                                     <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto shadow animate-bounce"><ClipboardCheck size={24} /></div>
