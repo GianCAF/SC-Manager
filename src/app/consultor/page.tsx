@@ -81,7 +81,6 @@ export default function DashboardConsultor() {
     const [registros, setRegistros] = useState<RegistroEncuesta[]>([]);
     const [loadingData, setLoadingData] = useState(true);
 
-    // 🔍 Estado para la barra de búsqueda reactiva
     const [filtroBusqueda, setFiltroBusqueda] = useState('');
 
     const [respuestasForm, setRespuestasForm] = useState<{ [key: string]: string }>({});
@@ -194,6 +193,7 @@ export default function DashboardConsultor() {
         setRespuestasForm({ ...respuestasForm, [campoId]: valorProcesado });
     };
 
+    // ⚡ MANEJADOR PRINCIPAL REESTRUCTURADO Y TRANSACCIONAL
     const handleFormSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
@@ -209,9 +209,85 @@ export default function DashboardConsultor() {
         setErrorForm('');
 
         try {
+            // 🧠 1. Extraer y mapear inputs del formulario actual
+            let emailCliente = '';
+            let curpCliente = '';
+            let nombreCon = '';
+            let patCon = '';
+            let matCon = '';
+            let municipioCliente = '';
+
+            const normalizar = (txt: string) =>
+                txt.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[()]/g, "").trim();
+
+            plantillaSeleccionada?.campos.forEach(campo => {
+                const lbl = normalizar(campo.label);
+                const val = (respuestasForm[campo.id] || '').trim();
+
+                if (lbl.includes('correo') || lbl.includes('email')) {
+                    emailCliente = val;
+                } else if (lbl.includes('curp')) {
+                    curpCliente = val.toUpperCase();
+                } else if (lbl.includes('nombre') && !lbl.includes('paterno') && !lbl.includes('materno')) {
+                    nombreCon = val;
+                } else if (lbl.includes('paterno')) {
+                    patCon = val;
+                } else if (lbl.includes('materno')) {
+                    matCon = val;
+                } else if (lbl.includes('municipio') || lbl.includes('localidad')) {
+                    municipioCliente = val;
+                }
+            });
+
+            // 🛡️ 2. VALIDACIÓN LOCAL PREVENTIVA: Si la CURP viene vacía o incompleta, frenar.
+            if (!curpCliente || curpCliente.length !== 18) {
+                throw new Error("La CURP es obligatoria y debe contener exactamente 18 caracteres.");
+            }
+
+            // 🔒 3. VERIFICACIÓN DIRECTA EN FIRESTORE (Respuestas previas del formulario)
+            // Esto asegura que si ya existe una encuesta con esta CURP, se cancele antes de tocar nada más.
+            const qValidarCurp = query(
+                collection(db, "respuestas_formularios"),
+                where(`respuestas.CURP`, "==", curpCliente)
+            );
+            const snapValidar = await getDocs(qValidarCurp);
+
+            if (!snapValidar.empty) {
+                throw new Error(`Operación rechazada: Ya existe un expediente de campo registrado con la CURP: ${curpCliente}.`);
+            }
+
+            // 🚀 4. INVOCACIÓN AL BACKEND: Crear usuario de forma remota. 
+            // Si el backend rebota la petición (por CURP o email duplicado), el error se captura en el catch.
+            if (emailCliente) {
+                const nombreCompletoCliente = `${nombreCon} ${patCon} ${matCon}`.trim().replace(/\s+/g, ' ') || "Cliente Registrado";
+
+                const response = await fetch('/api/auth/register-cliente/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: emailCliente,
+                        curp: curpCliente,
+                        nombre: nombreCompletoCliente,
+                        municipio: municipioCliente,
+                        consultorId: user.uid
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    // Si el servidor falla (ej: CURP ya registrada en la colección usuarios), lanzamos el error del backend
+                    throw new Error(data.error || "No se pudo completar el registro del cliente.");
+                }
+            }
+
+            // 📝 5. COMPROMISO FINAL: Solo si las validaciones previas pasaron al 100%,
+            // guardamos las respuestas del formato en Firestore.
             const respuestasEstructuradas: { [key: string]: any } = {};
             plantillaSeleccionada?.campos.forEach(campo => {
-                respuestasEstructuradas[campo.label] = respuestasForm[campo.id] || '';
+                respuestasEstructuradas[campo.label] = (campo.label.toUpperCase() === 'CURP')
+                    ? curpCliente
+                    : (respuestasForm[campo.id] || '');
             });
 
             await addDoc(collection(db, "respuestas_formularios"), {
@@ -232,13 +308,13 @@ export default function DashboardConsultor() {
             }, 1500);
 
         } catch (err: any) {
-            setErrorForm("No se guardó el registro: " + err.message);
+            // Pintar la alerta roja arriba en el formulario del consultor y mantener los datos intactos
+            setErrorForm(err.message);
         } finally {
             setSubmittingForm(false);
         }
     };
 
-    // 🧠 Lógica de Filtrado en Tiempo Real (Ignora acentos y mayúsculas)
     const registrosFiltrados = registros.filter(reg => {
         const nombreCompleto = obtenerNombreResumen(reg).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
         const busquedaLimpia = filtroBusqueda.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -278,8 +354,8 @@ export default function DashboardConsultor() {
                     <button
                         onClick={() => { setVistaActiva('registros'); setErrorForm(''); setFiltroBusqueda(''); }}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${vistaActiva === 'registros' || vistaActiva === 'detalle-registro'
-                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
-                                : 'text-slate-600 hover:bg-slate-50'
+                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
+                            : 'text-slate-600 hover:bg-slate-50'
                             }`}
                     >
                         <ClipboardList size={18} />
@@ -289,8 +365,8 @@ export default function DashboardConsultor() {
                     <button
                         onClick={() => { setVistaActiva('agendar'); setErrorForm(''); }}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${vistaActiva === 'agendar' || vistaActiva === 'llenar'
-                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
-                                : 'text-slate-600 hover:bg-slate-50'
+                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
+                            : 'text-slate-600 hover:bg-slate-50'
                             }`}
                     >
                         <Calendar size={18} />
@@ -309,7 +385,6 @@ export default function DashboardConsultor() {
                                 <p className="text-xs text-slate-400">Selecciona un beneficiario para auditar su expediente completo.</p>
                             </div>
 
-                            {/* ⚡ BARRA DE BÚSQUEDA PREDICTIVA SUPERIOR */}
                             {registros.length > 0 && (
                                 <div className="relative w-full mb-4">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
@@ -433,7 +508,7 @@ export default function DashboardConsultor() {
                                 <div className="py-12 text-center space-y-2">
                                     <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto shadow animate-bounce"><ClipboardCheck size={24} /></div>
                                     <h3 className="font-black text-slate-900 text-base">¡Guardado Exitosamente!</h3>
-                                    <p className="text-xs text-slate-400">Sincronizando bitácora general...</p>
+                                    <p className="text-xs text-slate-400">Sincronizando bitácora general y credenciales de acceso...</p>
                                 </div>
                             ) : (
                                 <form onSubmit={handleFormSubmit} className="space-y-4">
