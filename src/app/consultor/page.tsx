@@ -88,7 +88,6 @@ export default function DashboardConsultor() {
     const [errorForm, setErrorForm] = useState('');
     const [successForm, setSuccessForm] = useState(false);
 
-    // ⚡ ESTADOS PARA LA VENTANA EMERGENTE (TOAST) DINÁMICA
     const [mostrarToast, setMostrarToast] = useState(false);
     const [animarToast, setAnimarToast] = useState(false);
 
@@ -103,6 +102,7 @@ export default function DashboardConsultor() {
         try {
             setLoadingData(true);
 
+            // Cargar las plantillas de los formularios
             const qPlantillas = collection(db, "plantillas_formularios");
             const snapPlantillas = await getDocs(qPlantillas);
             const listaPlantillas = snapPlantillas.docs.map(doc => ({
@@ -111,7 +111,8 @@ export default function DashboardConsultor() {
             })) as Plantilla[];
             setPlantillas(listaPlantillas);
 
-            const qRegistros = query(collection(db, "respuestas_formularios"), where("encuestador.uid", "==", user.uid));
+            // ⚡ SE LIBERA LA CONSULTA: Se eliminó el filtro where() para permitir visibilidad compartida de expedientes
+            const qRegistros = collection(db, "respuestas_formularios");
             const snapRegistros = await getDocs(qRegistros);
             const listaRegistros = snapRegistros.docs.map(doc => ({
                 id: doc.id,
@@ -197,18 +198,14 @@ export default function DashboardConsultor() {
         setRespuestasForm({ ...respuestasForm, [campoId]: valorProcesado });
     };
 
-    // ⚡ DISPARADOR DEL TOAST CON MICROANIMACIÓN ELÁSTICA (Pequeño crecimiento y achicamiento)
     const dispararToastError = (mensaje: string) => {
         setErrorForm(mensaje);
         setMostrarToast(true);
-
-        // Micro-animación elástica: escala de golpe y se estabiliza
         setTimeout(() => setAnimarToast(true), 50);
 
-        // ⏱️ Auto-cierre estricto a los 3 segundos
         setTimeout(() => {
             setAnimarToast(false);
-            setTimeout(() => setMostrarToast(false), 200); // Espera que acabe el fade-out
+            setTimeout(() => setMostrarToast(false), 200);
         }, 3000);
     };
 
@@ -260,7 +257,6 @@ export default function DashboardConsultor() {
                 throw new Error("La CURP es obligatoria y debe contener exactamente 18 caracteres.");
             }
 
-            // Validar CURP en Firestore
             const qValidarCurp = query(
                 collection(db, "respuestas_formularios"),
                 where(`respuestas.CURP`, "==", curpCliente)
@@ -271,11 +267,10 @@ export default function DashboardConsultor() {
                 throw new Error(`La CURP "${curpCliente}" ya está registrada en otro expediente.`);
             }
 
-            // Invocación al API Auth del Cliente
             if (emailCliente) {
                 const nombreCompletoCliente = `${nombreCon} ${patCon} ${matCon}`.trim().replace(/\s+/g, ' ') || "Cliente Registrado";
 
-                const response = await fetch('/api/auth/register-cliente/', {
+                await fetch('/api/auth/register-cliente/', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -294,7 +289,6 @@ export default function DashboardConsultor() {
                 }
             }
 
-            // Guardar respuestas si todo es válido
             const respuestasEstructuradas: { [key: string]: any } = {};
             plantillaSeleccionada?.campos.forEach(campo => {
                 respuestasEstructuradas[campo.label] = (campo.label.toUpperCase() === 'CURP')
@@ -320,7 +314,6 @@ export default function DashboardConsultor() {
             }, 1500);
 
         } catch (err: any) {
-            // ⚡ Dispara la ventana emergente elástica en lugar de pintar el banner viejo
             dispararToastError(err.message);
         } finally {
             setSubmittingForm(false);
@@ -345,22 +338,19 @@ export default function DashboardConsultor() {
     return (
         <div className="min-h-screen bg-slate-50 flex flex-col relative overflow-x-hidden">
 
-            {/* ─── VENTANA EMERGENTE (TOAST DE ERROR ROJO) CON MICROANIMACIÓN ─── */}
+            {/* TOAST DE ERROR */}
             {mostrarToast && (
                 <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4 pointer-events-auto">
                     <div className={`bg-red-600 border border-red-700 text-white p-4 rounded-2xl shadow-2xl flex items-start gap-3 transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] transform ${animarToast
-                            ? 'translate-y-0 opacity-100 scale-100'
-                            : '-translate-y-4 opacity-0 scale-95'
+                        ? 'translate-y-0 opacity-100 scale-100'
+                        : '-translate-y-4 opacity-0 scale-95'
                         }`}>
                         <AlertCircle size={20} className="shrink-0 mt-0.5 animate-pulse text-red-100" />
                         <div className="flex-1">
                             <p className="text-xs font-black uppercase tracking-wider text-red-200">Alerta de Registro</p>
                             <p className="text-xs font-bold mt-0.5 leading-relaxed">{errorForm}</p>
                         </div>
-                        <button
-                            onClick={() => { setAnimarToast(false); setTimeout(() => setMostrarToast(false), 200); }}
-                            className="p-1 hover:bg-red-700/60 rounded-lg transition-colors text-red-200 hover:text-white"
-                        >
+                        <button onClick={() => { setAnimarToast(false); setTimeout(() => setMostrarToast(false), 200); }} className="p-1 hover:bg-red-700/60 rounded-lg transition-colors text-red-200 hover:text-white">
                             <X size={14} />
                         </button>
                     </div>
@@ -385,28 +375,8 @@ export default function DashboardConsultor() {
                 {/* MENÚ IZQUIERDO */}
                 <aside className="w-full md:w-64 shrink-0 bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-2 md:sticky md:top-24 h-fit">
                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider px-3 mb-3">Opciones</p>
-
-                    <button
-                        onClick={() => { setVistaActiva('registros'); setErrorForm(''); setFiltroBusqueda(''); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${vistaActiva === 'registros' || vistaActiva === 'detalle-registro'
-                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
-                            : 'text-slate-600 hover:bg-slate-50'
-                            }`}
-                    >
-                        <ClipboardList size={18} />
-                        Ver Registros
-                    </button>
-
-                    <button
-                        onClick={() => { setVistaActiva('agendar'); setErrorForm(''); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${vistaActiva === 'agendar' || vistaActiva === 'llenar'
-                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
-                            : 'text-slate-600 hover:bg-slate-50'
-                            }`}
-                    >
-                        <Calendar size={18} />
-                        Agendar Encuesta
-                    </button>
+                    <button onClick={() => { setVistaActiva('registros'); setErrorForm(''); setFiltroBusqueda(''); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${vistaActiva === 'registros' || vistaActiva === 'detalle-registro' ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'text-slate-600 hover:bg-slate-50'}`}><ClipboardList size={18} />Ver Registros</button>
+                    <button onClick={() => { setVistaActiva('agendar'); setErrorForm(''); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${vistaActiva === 'agendar' || vistaActiva === 'llenar' ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'text-slate-600 hover:bg-slate-50'}`}><Calendar size={18} />Agendar Encuesta</button>
                 </aside>
 
                 {/* PANEL DERECHO */}
@@ -425,13 +395,7 @@ export default function DashboardConsultor() {
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                                         <Search size={16} />
                                     </div>
-                                    <input
-                                        type="text"
-                                        value={filtroBusqueda}
-                                        onChange={(e) => setFiltroBusqueda(e.target.value)}
-                                        placeholder="Busca por nombre y/o apellidos"
-                                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-inner"
-                                    />
+                                    <input type="text" value={filtroBusqueda} onChange={(e) => setFiltroBusqueda(e.target.value)} placeholder="Busca por nombre y/o apellidos" className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-inner" />
                                 </div>
                             )}
 
@@ -442,18 +406,9 @@ export default function DashboardConsultor() {
                             ) : (
                                 <div className="grid grid-cols-1 gap-3">
                                     {registrosFiltrados.map((reg) => (
-                                        <div
-                                            key={reg.id}
-                                            onClick={() => { setRegistroSeleccionado(reg); setVistaActiva('detalle-registro'); }}
-                                            className="border border-slate-100 hover:border-blue-300 bg-white p-5 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer border-l-4 border-l-blue-600 animate-in fade-in duration-150"
-                                        >
-                                            <h3 className="font-black text-blue-700 text-base tracking-wide uppercase">
-                                                {obtenerNombreResumen(reg)}
-                                            </h3>
-                                            <p className="text-xs text-slate-400 font-medium flex items-center gap-1 mt-2">
-                                                <Clock size={12} className="text-slate-300" />
-                                                Realizado el: <span className="text-slate-600 font-semibold">{formatIdaFecha(reg.createdAt)}</span>
-                                            </p>
+                                        <div key={reg.id} onClick={() => { setRegistroSeleccionado(reg); setVistaActiva('detalle-registro'); }} className="border border-slate-100 hover:border-blue-300 bg-white p-5 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer border-l-4 border-l-blue-600 animate-in fade-in duration-150">
+                                            <h3 className="font-black text-blue-700 text-base tracking-wide uppercase">{obtenerNombreResumen(reg)}</h3>
+                                            <p className="text-xs text-slate-400 font-medium flex items-center gap-1 mt-2"><Clock size={12} className="text-slate-300" />Realizado el: <span className="text-slate-600 font-semibold">{formatIdaFecha(reg.createdAt)}</span></p>
                                         </div>
                                     ))}
                                 </div>
@@ -461,7 +416,7 @@ export default function DashboardConsultor() {
                         </div>
                     )}
 
-                    {/* DETALLE DEL REGISTRO */}
+                    {/* DETALLE DEL REGISTRO ORDENADO SEGÚN EL FORMULARIO ORIGINAL */}
                     {vistaActiva === 'detalle-registro' && registroSeleccionado && (
                         <div className="space-y-5 animate-in fade-in duration-200">
                             <div className="border-b border-slate-100 pb-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -481,17 +436,40 @@ export default function DashboardConsultor() {
                             </div>
 
                             <div className="grid grid-cols-1 gap-3.5">
-                                {Object.entries(registroSeleccionado.respuestas).map(([labelPregunta, valor]) => (
-                                    <div key={labelPregunta} className="bg-slate-50 border border-slate-100 p-4 rounded-xl">
-                                        <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider">{labelPregunta}</p>
-                                        <p className="text-sm font-bold text-slate-800 mt-1">
-                                            {typeof valor === 'string' && valor.match(/^\d{4}-\d{2}-\d{2}$/)
-                                                ? valor.split('-').reverse().join('/')
-                                                : String(valor)
-                                            }
-                                        </p>
-                                    </div>
-                                ))}
+                                {(() => {
+                                    const plantillaAsociada = plantillas.find(p => p.id === registroSeleccionado.plantillaId);
+
+                                    if (plantillaAsociada && plantillaAsociada.campos && plantillaAsociada.campos.length > 0) {
+                                        return plantillaAsociada.campos.map((campo) => {
+                                            const valorRespuesta = registroSeleccionado.respuestas[campo.label];
+                                            const valorFormateado = valorRespuesta !== undefined && valorRespuesta !== null ? String(valorRespuesta) : '—';
+
+                                            return (
+                                                <div key={campo.id} className="bg-slate-50 border border-slate-100 p-4 rounded-xl">
+                                                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider">{campo.label}</p>
+                                                    <p className="text-sm font-bold text-slate-800 mt-1">
+                                                        {campo.type === 'date' && valorFormateado.match(/^\d{4}-\d{2}-\d{2}$/)
+                                                            ? valorFormateado.split('-').reverse().join('/')
+                                                            : valorFormateado
+                                                        }
+                                                    </p>
+                                                </div>
+                                            );
+                                        });
+                                    }
+
+                                    return Object.entries(registroSeleccionado.respuestas).map(([labelPregunta, valor]) => (
+                                        <div key={labelPregunta} className="bg-slate-50 border border-slate-100 p-4 rounded-xl">
+                                            <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider">{labelPregunta}</p>
+                                            <p className="text-sm font-bold text-slate-800 mt-1">
+                                                {typeof valor === 'string' && valor.match(/^\d{4}-\d{2}-\d{2}$/)
+                                                    ? valor.split('-').reverse().join('/')
+                                                    : String(valor)
+                                                }
+                                            </p>
+                                        </div>
+                                    ));
+                                })()}
                             </div>
                         </div>
                     )}
@@ -503,7 +481,6 @@ export default function DashboardConsultor() {
                                 <h2 className="text-lg font-black text-slate-900">Formatos de Encuesta</h2>
                                 <p className="text-xs text-slate-400">Selecciona un formato para abrir el formulario de captura inmediatamente abajo.</p>
                             </div>
-
                             <div className="grid grid-cols-1 gap-3">
                                 {plantillas.map((formato) => (
                                     <div key={formato.id} className="border border-slate-100 rounded-xl p-4 bg-white shadow-sm flex items-center justify-between gap-4">
@@ -511,12 +488,7 @@ export default function DashboardConsultor() {
                                             <h4 className="font-bold text-slate-800 text-sm">{formato.titulo}</h4>
                                             <p className="text-xs text-slate-400 line-clamp-1 mt-0.5">{formato.descripcion}</p>
                                         </div>
-                                        <button
-                                            onClick={() => { setPlantillaSeleccionada(formato); setVistaActiva('llenar'); }}
-                                            className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-blue-700 transition-all shadow-md shrink-0"
-                                        >
-                                            Seleccionar
-                                        </button>
+                                        <button onClick={() => { setPlantillaSeleccionada(formato); setVistaActiva('llenar'); }} className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-blue-700 transition-all shadow-md shrink-0">Seleccionar</button>
                                     </div>
                                 ))}
                             </div>
@@ -531,12 +503,7 @@ export default function DashboardConsultor() {
                                     <span className="text-[10px] font-black uppercase bg-green-100 text-green-700 px-2 py-0.5 rounded">Captura Activa</span>
                                     <h2 className="text-lg font-black text-slate-900 mt-1">{plantillaSeleccionada.titulo}</h2>
                                 </div>
-                                <button
-                                    onClick={() => { setVistaActiva('agendar'); setErrorForm(''); }}
-                                    className="text-slate-500 hover:text-slate-800 text-xs font-bold flex items-center gap-1"
-                                >
-                                    <ArrowLeft size={14} /> Cambiar Formato
-                                </button>
+                                <button onClick={() => { setVistaActiva('agendar'); setErrorForm(''); }} className="text-slate-500 hover:text-slate-800 text-xs font-bold flex items-center gap-1"><ArrowLeft size={14} /> Cambiar Formato</button>
                             </div>
 
                             {successForm ? (
@@ -549,52 +516,14 @@ export default function DashboardConsultor() {
                                 <form onSubmit={handleFormSubmit} className="space-y-4">
                                     {plantillaSeleccionada.campos.map((campo) => (
                                         <div key={campo.id} className="bg-slate-50/50 border border-slate-100 p-4 rounded-xl">
-                                            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                                                {campo.label} {campo.required && <span className="text-red-500">*</span>}
-                                            </label>
-
-                                            {campo.type === 'text' && (
-                                                <input
-                                                    type="text"
-                                                    required={campo.required}
-                                                    value={respuestasForm[campo.id] || ''}
-                                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                                                    onChange={(e) => handleInputChange(campo.label, campo.id, e.target.value)}
-                                                />
-                                            )}
-
-                                            {campo.type === 'number' && (
-                                                <input
-                                                    type="number"
-                                                    required={campo.required}
-                                                    value={respuestasForm[campo.id] || ''}
-                                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                                                    onChange={(e) => handleInputChange(campo.label, campo.id, e.target.value)}
-                                                />
-                                            )}
-
-                                            {campo.type === 'date' && (
-                                                <SelectorFechaDinamico required={campo.required} disabled={submittingForm} onChange={(valor) => handleInputChange(campo.label, campo.id, valor)} />
-                                            )}
-
-                                            {campo.type === 'textarea' && (
-                                                <textarea
-                                                    rows={3}
-                                                    required={campo.required}
-                                                    value={respuestasForm[campo.id] || ''}
-                                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                                                    onChange={(e) => handleInputChange(campo.label, campo.id, e.target.value)}
-                                                />
-                                            )}
+                                            <label className="block text-xs font-bold text-slate-700 mb-1.5">{campo.label} {campo.required && <span className="text-red-500">*</span>}</label>
+                                            {campo.type === 'text' && (<input type="text" required={campo.required} value={respuestasForm[campo.id] || ''} className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all" onChange={(e) => handleInputChange(campo.label, campo.id, e.target.value)} />)}
+                                            {campo.type === 'number' && (<input type="number" required={campo.required} value={respuestasForm[campo.id] || ''} className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all" onChange={(e) => handleInputChange(campo.label, campo.id, e.target.value)} />)}
+                                            {campo.type === 'date' && (<SelectorFechaDinamico required={campo.required} disabled={submittingForm} onChange={(valor) => handleInputChange(campo.label, campo.id, valor)} />)}
+                                            {campo.type === 'textarea' && (<textarea rows={3} required={campo.required} value={respuestasForm[campo.id] || ''} className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all" onChange={(e) => handleInputChange(campo.label, campo.id, e.target.value)} />)}
                                         </div>
                                     ))}
-
-                                    <button
-                                        type="submit" disabled={submittingForm}
-                                        className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl text-xs tracking-wide transition-all shadow-md shadow-green-100 flex items-center justify-center gap-2"
-                                    >
-                                        {submittingForm ? <Loader2 className="animate-spin" size={16} /> : "Guardar y Sincronizar Registro"}
-                                    </button>
+                                    <button type="submit" disabled={submittingForm} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl text-xs tracking-wide transition-all shadow-md shadow-green-100 flex items-center justify-center gap-2">{submittingForm ? <Loader2 className="animate-spin" size={16} /> : "Guardar y Sincronizar Registro"}</button>
                                 </form>
                             )}
                         </div>
