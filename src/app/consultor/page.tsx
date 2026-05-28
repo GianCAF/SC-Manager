@@ -32,7 +32,6 @@ function SelectorFechaDinamico({ required, disabled, value, onChange }: { requir
     const hoy = new Date();
     const anioActual = hoy.getFullYear();
 
-    // Si viene un valor previo (YYYY-MM-DD), extraer las partes para los selectores
     const [anio, mes, dia] = value ? value.split('-') : ['', '', ''];
 
     const anios = Array.from({ length: anioActual - 1920 + 1 }, (_, i) => anioActual - i);
@@ -75,7 +74,6 @@ export default function DashboardConsultor() {
     const [mostrarToast, setMostrarToast] = useState(false);
     const [animarToast, setAnimarToast] = useState(false);
 
-    // ⚡ ESTADOS PARA LA EDICIÓN DINÁMICA DE EXPEDIENTES EXISTENTES
     const [editandoExpediente, setEditandoExpediente] = useState(false);
     const [respuestasEditadas, setRespuestasEditadas] = useState<{ [key: string]: any }>({});
 
@@ -295,19 +293,17 @@ export default function DashboardConsultor() {
 
         } catch (err: any) {
             dispararToastError(err.message);
-        } {
+        } finally {
             setSubmittingForm(false);
         }
     };
 
-    // ⚡ CONTROLADOR PARA ACTUALIZAR EL EXPEDIENTE EDITADO EN FIRESTORE
     const handleActualizarExpediente = async () => {
         if (!registroSeleccionado?.id) return;
         setSubmittingForm(true);
         setErrorForm('');
 
         try {
-            // Forzar mayúsculas en la CURP si se editó
             const respuestasLimpias = { ...respuestasEditadas };
             Object.keys(respuestasLimpias).forEach(key => {
                 if (key.toLowerCase().includes('curp') && typeof respuestasLimpias[key] === 'string') {
@@ -321,7 +317,6 @@ export default function DashboardConsultor() {
                 modificadoAt: new Date().toISOString()
             });
 
-            // Refrescar el estado local
             const registroActualizado = {
                 ...registroSeleccionado,
                 respuestas: respuestasLimpias
@@ -357,7 +352,7 @@ export default function DashboardConsultor() {
     }
 
     return (
-        <div className="min-h-screen bg-slate-50 flex flex-col relative overflow-x-hidden">
+        <div className="min-h-screen bg-slate-50 flex flex-col relative overflow-x-hidden pb-24">
 
             {/* TOAST DE ERROR */}
             {mostrarToast && (
@@ -424,65 +419,22 @@ export default function DashboardConsultor() {
                     {/* DETALLE Y EDICIÓN DEL REGISTRO DINÁMICO */}
                     {vistaActiva === 'detalle-registro' && registroSeleccionado && (
                         <div className="space-y-5 animate-in fade-in duration-200">
-                            <div className="border-b border-slate-100 pb-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                                <div>
-                                    <span className="text-[10px] font-black uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
-                                        {editandoExpediente ? "Modo Edición Activo" : "Expediente Completo"}
-                                    </span>
-                                    <h2 className="text-xl font-black text-blue-700 mt-1 uppercase tracking-wide">
-                                        {obtenerNombreResumen(registroSeleccionado)}
-                                    </h2>
-                                    <p className="text-xs text-slate-400 mt-0.5">Capturado en: {registroSeleccionado.formatoTitulo}</p>
-                                </div>
-
-                                <div className="flex items-center gap-2 self-start md:self-center">
-                                    {editandoExpediente ? (
-                                        <>
-                                            <button
-                                                onClick={handleActualizarExpediente} disabled={submittingForm}
-                                                className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-1.5"
-                                            >
-                                                {submittingForm ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
-                                                Guardar Cambios
-                                            </button>
-                                            <button
-                                                onClick={() => setEditandoExpediente(false)}
-                                                className="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold px-4 py-2.5 rounded-xl transition-all"
-                                            >
-                                                Cancelar
-                                            </button>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <button
-                                                onClick={() => {
-                                                    setRespuestasEditadas(registroSeleccionado.respuestas);
-                                                    setEditandoExpediente(true);
-                                                }}
-                                                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-1.5"
-                                            >
-                                                <Edit2 size={14} />
-                                                Editar Expediente
-                                            </button>
-                                            <button
-                                                onClick={() => { setVistaActiva('registros'); setRegistroSeleccionado(null); }}
-                                                className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all"
-                                            >
-                                                Cerrar
-                                            </button>
-                                        </>
-                                    )}
-                                </div>
+                            <div className="border-b border-slate-100 pb-3">
+                                <span className="text-[10px] font-black uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                                    {editandoExpediente ? "Modo Edición Activo" : "Expediente Completo"}
+                                </span>
+                                <h2 className="text-xl font-black text-blue-700 mt-1 uppercase tracking-wide">
+                                    {obtenerNombreResumen(registroSeleccionado)}
+                                </h2>
+                                <p className="text-xs text-slate-400 mt-0.5">Capturado en: {registroSeleccionado.formatoTitulo}</p>
                             </div>
 
-                            {/* FEEDBACK ÉXITO LOCAL EN EDICIÓN */}
                             {successForm && (
                                 <div className="bg-green-50 text-green-700 border border-green-100 p-3 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in">
                                     <ClipboardCheck size={16} /> ¡Expediente actualizado y sincronizado correctamente!
                                 </div>
                             )}
 
-                            {/* CAPA DE CAMPOS SECUENCIALES */}
                             <div className="grid grid-cols-1 gap-3.5">
                                 {(() => {
                                     const plantillaAsociada = plantillas.find(p => p.id === registroSeleccionado.plantillaId);
@@ -502,7 +454,6 @@ export default function DashboardConsultor() {
                                                     </label>
 
                                                     {editandoExpediente ? (
-                                                        /* ─── COMPONENTES EN MODO EDICIÓN ACTIVA ─── */
                                                         <>
                                                             {campo.type === 'text' && (
                                                                 <input type="text" value={valorString} className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500" onChange={(e) => setRespuestasEditadas({ ...respuestasEditadas, [campo.label]: e.target.value })} />
@@ -518,7 +469,6 @@ export default function DashboardConsultor() {
                                                             )}
                                                         </>
                                                     ) : (
-                                                        /* ─── VISTA ESTÁTICA TRADICIONAL ─── */
                                                         <p className="text-sm font-bold text-slate-800 mt-1">
                                                             {campo.type === 'date' && valorString.match(/^\d{4}-\d{2}-\d{2}$/)
                                                                 ? valorString.split('-').reverse().join('/')
@@ -531,7 +481,6 @@ export default function DashboardConsultor() {
                                         });
                                     }
 
-                                    // Fallback seguro por si no hay plantilla
                                     return Object.entries(registroSeleccionado.respuestas).map(([labelPregunta, valor]) => (
                                         <div key={labelPregunta} className="bg-slate-50 border border-slate-100 p-4 rounded-xl">
                                             <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider">{labelPregunta}</p>
@@ -540,6 +489,52 @@ export default function DashboardConsultor() {
                                     ));
                                 })()}
                             </div>
+
+                            {/* ─── 🛠️ CONTROLADOR FLOTANTE INFERIOR DE ACCIÓN GLOBAL (STICKY UX) ─── */}
+                            <div className="fixed bottom-0 left-0 md:left-64 right-0 bg-white/80 backdrop-blur-md border-t border-slate-100 px-6 py-4 flex justify-between items-center z-40 shadow-[0_-8px_30px_rgb(0,0,0,0.04)] animate-in fade-in slide-in-from-bottom-4 duration-300">
+                                <div className="text-xs font-bold text-slate-400">
+                                    {editandoExpediente ? "⚠️ Cambios sin guardar" : "📄 Modo Lectura"}
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    {editandoExpediente ? (
+                                        <>
+                                            <button
+                                                onClick={() => setEditandoExpediente(false)}
+                                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black px-5 py-2.5 rounded-xl transition-all"
+                                            >
+                                                Cancelar
+                                            </button>
+                                            <button
+                                                onClick={handleActualizarExpediente} disabled={submittingForm}
+                                                className="bg-green-600 hover:bg-green-700 text-white text-xs font-black px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-green-100 flex items-center gap-1.5"
+                                            >
+                                                {submittingForm ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
+                                                Guardar Cambios
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <button
+                                                onClick={() => { setVistaActiva('registros'); setRegistroSeleccionado(null); }}
+                                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black px-5 py-2.5 rounded-xl transition-all"
+                                            >
+                                                Cerrar Expediente
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setRespuestasEditadas(registroSeleccionado.respuestas);
+                                                    setEditandoExpediente(true);
+                                                }}
+                                                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-blue-100 flex items-center gap-1.5"
+                                            >
+                                                <Edit2 size={14} />
+                                                Editar Datos
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+
                         </div>
                     )}
 
