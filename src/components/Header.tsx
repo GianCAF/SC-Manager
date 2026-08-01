@@ -1,39 +1,51 @@
-"use client";
 import Link from 'next/link';
-import { useAuth } from '@/context/AuthContext';
-import { signOut } from 'firebase/auth';
-import { auth } from '@/firebase/config';
-import { LogOut, User, LayoutDashboard, Home } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import Image from "next/image";
 
 export default function Header() {
-    const { user, role, loading } = useAuth();
-    const router = useRouter();
+  return (
+    <header className="bg-white border-b border-slate-100 py-2 px-8 sticky top-0 z-50">
+      <div className="max-w-7xl mx-auto flex items-center justify-between">
+        
+        {/* 1. LOGO / TÍTULO (Izquierda) */}
+        <div className="flex items-center">
+          <Image src="/imagenes/Logo1.png"alt="Logo SocioManager"width={125} height={60} priority style={{ width: 'auto', height: 'auto' }}
+          className="h-9 w-auto object-contain"/>
+        </div>
 
-    const handleLogout = async () => {
-        await signOut(auth);
-        router.push('/');
-    };
+        {/* 2. ENLACES EN TEXTO PLANO (Centro) */}
+        <nav className="hidden md:flex items-center gap-6 text-sm font-bold">
+            <Link 
+              href="/" 
+              className="bg-blue-600 text-white px-7 py-2.5 rounded-md hover:bg-blue-700 transition-all shadow-sm text-center">
+              Inicio
+            </Link>
+            <Link 
+              href="/#servicios" 
+              className="bg-blue-600 text-white px-7 py-2.5 rounded-md hover:bg-blue-700 transition-all shadow-sm text-center">
+              Servicios
+            </Link>
+            <Link 
+              href="/#nosotros" 
+              className="bg-blue-600 text-white px-7 py-2.5 rounded-md hover:bg-blue-700 transition-all shadow-sm text-center">
+              Nosotros
+            </Link>
+            <Link 
+              href="/#contacto" 
+              className="bg-blue-600 text-white px-7 py-2.5 rounded-md hover:bg-blue-700 transition-all shadow-sm text-center">
+              Contacto
+            </Link>
+        </nav>
 
-    return (
-        <header className="bg-white shadow-sm border-b sticky top-0 z-50">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex justify-between items-center">
-                <Link href="/" className="text-xl font-bold text-blue-700 flex items-center gap-2">
-                    <LayoutDashboard size={20} /> Socio<span className="text-slate-800">Manager</span>
-                </Link>
-                <div className="flex items-center space-x-4">
-                    {loading ? (
-                        <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
-                    ) : user ? (
-                        <div className="flex items-center gap-3">
-                            <span className="text-sm font-bold hidden sm:block uppercase text-blue-600">{role}</span>
-                            <button onClick={handleLogout} className="p-2 hover:text-red-600"><LogOut size={20} /></button>
-                        </div>
-                    ) : (
-                        <Link href="/auth/login" className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold">Iniciar Sesión</Link>
-                    )}
-                </div>
-            </div>
-        </header>
-    );
+        {/* 3. BOTÓN AZUL LIMPIO (Derecha) */}
+        <div>
+          <Link 
+            href="/auth/login" 
+            className="bg-blue-600 text-white px-7 py-2.5 rounded-md text-sm font-bold hover:bg-blue-700 transition-all shadow-sm block text-center">
+            Iniciar Sesión
+          </Link>
+        </div>
+
+      </div>
+    </header>
+  );
 }
