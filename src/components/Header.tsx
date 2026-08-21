@@ -20,17 +20,17 @@ export default function Header() {
               Inicio
             </Link>
             <Link 
-              href="/#servicios" 
-              className="bg-blue-600 text-white px-7 py-2.5 rounded-md hover:bg-blue-700 transition-all shadow-sm text-center">
-              Servicios
-            </Link>
-            <Link 
-              href="/#nosotros" 
+              href="/#nosotros"
               className="bg-blue-600 text-white px-7 py-2.5 rounded-md hover:bg-blue-700 transition-all shadow-sm text-center">
               Nosotros
             </Link>
             <Link 
-              href="/#contacto" 
+              href="/#servicios"
+              className="bg-blue-600 text-white px-7 py-2.5 rounded-md hover:bg-blue-700 transition-all shadow-sm text-center">
+              Servicios
+            </Link>
+            <Link 
+              href="/#contacto"
               className="bg-blue-600 text-white px-7 py-2.5 rounded-md hover:bg-blue-700 transition-all shadow-sm text-center">
               Contacto
             </Link>

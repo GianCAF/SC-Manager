@@ -17,17 +17,17 @@ export default function LandingPage() {
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center text-center px-4 space-y-6 bg-slate-900/50 backdrop-blur-[2px]">
           {/* Encabezados */}
           <div className="space-y-2 max-w-4xl">
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-white tracking-tight leading-tight drop-shadow-md">
+            <h1 className="text-5xl md:text-6xl lg:text-6xl font-extrabold text-white tracking-tight leading-tight drop-shadow-md">
               Tu aliado en confianza y capital humano.
             </h1>
 
-            <h2 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-blue-400 tracking-tight leading-tight drop-shadow-md">
+            <h2 className="text-5xl md:text-6xl lg:text-6xl font-extrabold text-blue-400 tracking-tight leading-tight drop-shadow-md">
               Investigación con rigor.
             </h2>
           </div>
 
           {/* Subtítulo */}
-          <p className="text-slate-200 text-sm md:text-base max-w-2xl mx-auto font-medium leading-relaxed drop-shadow">
+          <p className="text-slate-100 text-sm md:text-base max-w-4xl mx-auto font-medium leading-relaxed drop-shadow">
             Soluciones profesionales en estudios socioeconómicos, investigaciones laborales y validación de información para empresas.
           </p>
 
@@ -49,17 +49,24 @@ export default function LandingPage() {
         <div className="grid md:grid-cols-2 gap-12 items-center mb-16">
           <div>
             <span className="text-blue-600 font-bold tracking-widest text-xs uppercase mb-2 block">
-              Nuestra Identidad
+              NOSOTROS
             </span>
             <h2 className="text-3xl md:text-4xl font-extrabold text-slate-900 mb-6">
-              Excelencia en Inteligencia Humana y Socioeconómica
+              Bienvenidos
             </h2>
+            <p className="text-slate-600 mb-8 leading-relaxed text-justify">
+              Somos una empresa con más de 5 años de experiencia ofreciendo servicios especializados en el desarrollode capital humano.
+              Nuestro propósito es que nuestros clientes alcancen su máximo rendimiento a través de la elección correcta de su personal.
+            </p>
+            <p className="text-slate-600 mb-8 leading-relaxed text-justify">
+              Con nuestro análisis de estudios socieconómicos y  laborales, logramos que nuestros clientes aumenten su eficacia y reduzcan sus costos de operación, así como su riesgo de inversión.
+            </p>
             <p className="text-slate-600 mb-8 leading-relaxed">
-              En HR Investigations & Socioeconomic Research, somos líderes en la provisión de servicios de investigación de alta fidelidad. Nuestra metodología objetiva y autoritaria asegura que cada dato recolectado sea una base sólida para el crecimiento de su organización.
+              Contamos con un gran equipo que nos permite tener cobertura nacional.
             </p>
             <div className="flex gap-8 border-t border-slate-200 pt-6">
               <div className="border-l-4 border-blue-600 pl-4">
-                <span className="text-3xl font-black text-slate-900 block">15+</span>
+                <span className="text-3xl font-black text-slate-900 block">5+</span>
                 <span className="text-sm text-slate-500">Años de Experiencia</span>
               </div>
               <div className="border-l-4 border-blue-600 pl-4">
@@ -87,7 +94,9 @@ export default function LandingPage() {
             </div>
             <h3 className="text-xl font-bold text-slate-900 mb-3">Misión</h3>
             <p className="text-slate-600 text-sm leading-relaxed">
-              Brindar soluciones integrales en estudios socioeconómicos, investigaciones laborales, incidencias legales, reclutamiento y estrategias de publicidad y marketing, mediante procesos confiables, éticos e innovadores que permitan a nuestros clientes tomar decisiones con seguridad y fortalecer el desarrollo de sus organizaciones.
+              Nuestro objetivo es brindar soluciones al control de confianza que te permitan efectuar todos los procesos de evaluación de personal
+              en sus modalidades de nuevo ingreso,promoción, permanencia y verificación de incidencias en seguridad que afecten la vulnerabilidad
+              de una organización pública o privada.  
             </p>
           </div>
 
@@ -97,7 +106,8 @@ export default function LandingPage() {
             </div>
             <h3 className="text-xl font-bold text-slate-900 mb-3">Visión</h3>
             <p className="text-slate-600 text-sm leading-relaxed">
-              Ser una empresa líder y referente a nivel nacional en servicios de investigación, verificación de información, reclutamiento y soluciones estratégicas para empresas, reconocida por la calidad de nuestros servicios, la innovación tecnológica y el compromiso con la excelencia.
+              Ser la empresa referente a nivel nacional en soluciones integrales de control de confianza y evaluación de personal, reconocida
+              por la precisión, confidencialidad e innovación tecnológica en la protección del capital humano de organizaciones públicas y privadas.
             </p>
           </div>
 
@@ -138,7 +148,7 @@ export default function LandingPage() {
               <h3 className="text-3xl font-bold text-slate-900 mb-4">
                 Investigación de Estudios Socioeconómicos
               </h3>
-              <p className="text-slate-600 mb-6">
+              <p className="text-slate-600 mb-6 text-justify">
                 Realizamos estudios socioeconómicos con el objetivo de verificar la información personal, familiar, económica y patrimonial de los candidatos o solicitantes, proporcionando información confiable para la toma de decisiones.
               </p>
               <ul className="space-y-3">
@@ -171,7 +181,7 @@ export default function LandingPage() {
               <h3 className="text-3xl font-bold text-slate-900 mb-4">
                 Investigación de Estudios laborales
               </h3>
-              <p className="text-slate-600 mb-6">
+              <p className="text-slate-600 mb-6 text-justify">
                 Verificamos la experiencia laboral de los candidatos mediante la validación de información proporcionada en su historial profesional, ayudando a reducir riesgos en los procesos de contratación.
               </p>
               <ul className="space-y-3">
@@ -220,7 +230,7 @@ export default function LandingPage() {
               <h3 className="text-3xl font-bold text-slate-900 mb-4">
                 Investigación de Incidencias Legales
               </h3>
-              <p className="text-slate-600 mb-6">
+              <p className="text-slate-600 mb-6 text-justify">
                 Protegemos su patrimonio y reputación mediante la búsqueda exhaustiva de antecedentes legales. Contamos con acceso a bases de datos actualizadas y procesos legales de consulta legítima.
               </p>
               <div className="grid grid-cols-2 gap-4">
@@ -258,7 +268,7 @@ export default function LandingPage() {
               <h3 className="text-3xl font-bold text-slate-900 mb-4">
                 Investigación de Reclutamiento
               </h3>
-              <p className="text-slate-600 mb-6">
+              <p className="text-slate-600 mb-6 text-justify">
                 Apoyamos a las organizaciones en la búsqueda y atracción del talento adecuado mediante procesos de reclutamiento eficientes, identificando candidatos que cumplan con el perfil requerido para cada vacante.
               </p>
               <ul className="space-y-3">
@@ -303,7 +313,7 @@ export default function LandingPage() {
               <h3 className="text-3xl font-bold text-slate-900 mb-4">
                 Publicidad y Marketing
               </h3>
-              <p className="text-slate-600 mb-6">
+              <p className="text-slate-600 mb-6 text-justify">
                 Diseñamos estrategias de publicidad y marketing para fortalecer la imagen de las empresas, incrementar su presencia en el mercado y atraer nuevos clientes mediante herramientas digitales y tradicionales.
               </p>
               <ul className="space-y-3">
@@ -356,8 +366,8 @@ export default function LandingPage() {
             <img src="/imagenes/consultores.jpeg" alt="Cliente 1" className="h-23 object-contain"/>
             <img src="/imagenes/frmedical.png" alt="Cliente 2" className="h-20 object-contain"/>
             <img src="/imagenes/laboratorio.png" alt="Cliente 3" className="h-24 object-contain"/>
-            <img src="/imagenes/lockton.png" alt="Cliente 4" className="h-24 object-contain"/>
-            <img src="/imagenes/amarox.jpeg" alt="Cliente 5" className="h-25 object-contain"/>
+            <img src="/imagenes/lockton.png" alt="Cliente 4" className="h-25 object-contain"/>
+            <img src="/imagenes/amarox.jpeg" alt="Cliente 5" className="h-26 object-contain"/>
           </div>
         </div>
       </section>
